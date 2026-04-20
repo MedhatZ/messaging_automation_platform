@@ -1,0 +1,1 @@
+export const WHATSAPP_GRAPH_API_VERSION = 'v18.0';

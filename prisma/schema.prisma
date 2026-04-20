@@ -1,0 +1,207 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum ChannelType {
+  WHATSAPP
+  MESSENGER
+  COMMENTS
+}
+
+enum MessageDirection {
+  INCOMING
+  OUTGOING
+}
+
+enum LeadStatus {
+  NEW
+  ORDER_PENDING
+  CONTACTED
+  CLOSED
+}
+
+enum UserRole {
+  ADMIN
+  CLIENT
+}
+
+model Tenant {
+  id        String   @id @default(uuid()) @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  name             String?
+  email            String?
+  isActive         Boolean   @default(true) @map("is_active")
+  subscriptionEnd DateTime? @map("subscription_end")
+
+  users         User[]
+  products      Product[]
+  faqs          Faq[]
+  conversations Conversation[]
+  leads         Lead[]
+  botSettings        BotSettings?
+  whatsappAccounts   WhatsappAccount[]
+
+  @@map("tenants")
+}
+
+model WhatsappAccount {
+  id                   String   @id @default(uuid()) @db.Uuid
+  tenantId             String   @map("tenant_id") @db.Uuid
+  metaPhoneNumberId    String   @unique @map("meta_phone_number_id")
+  metaWabaId           String?  @map("meta_waba_id")
+  displayPhoneNumber   String?  @map("display_phone_number")
+  accessTokenEncrypted String   @map("access_token_encrypted")
+  /** Last 4 chars of the access token (for UI masking only). */
+  accessTokenLast4    String?  @map("access_token_last_4") @db.VarChar(4)
+  verifyToken          String?  @map("verify_token")
+  status               String   @default("active")
+  createdAt            DateTime @default(now()) @map("created_at")
+  updatedAt            DateTime @updatedAt @map("updated_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([tenantId, status])
+  @@index([metaWabaId])
+  @@map("whatsapp_accounts")
+}
+
+model User {
+  id        String   @id @default(uuid()) @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  tenantId String @map("tenant_id") @db.Uuid
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  email    String   @unique
+  password String
+  role     UserRole @default(CLIENT)
+
+  @@index([tenantId])
+  @@map("users")
+}
+
+model Product {
+  id        String   @id @default(uuid()) @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  tenantId String @map("tenant_id") @db.Uuid
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  name        String
+  description String?
+  price       Float
+  imageUrls   String[] @default([]) @map("image_urls")
+  keywords    String[] @default([])
+  isActive    Boolean  @default(true) @map("is_active")
+
+  @@index([tenantId, isActive])
+  @@map("products")
+}
+
+model Faq {
+  id        String   @id @default(uuid()) @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  tenantId String @map("tenant_id") @db.Uuid
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  questionAr String   @map("question_ar")
+  questionEn String   @map("question_en")
+  answerAr   String   @map("answer_ar")
+  answerEn   String   @map("answer_en")
+  keywordsAr String[] @default([]) @map("keywords_ar")
+  keywordsEn String[] @default([]) @map("keywords_en")
+  isActive   Boolean  @default(true) @map("is_active")
+  priority   Int      @default(0)
+
+  @@index([tenantId, isActive])
+  @@map("faqs")
+}
+
+model Lead {
+  id        String   @id @default(uuid()) @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  tenantId String @map("tenant_id") @db.Uuid
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  name     String?
+  phone    String?
+  interest String?
+  status   LeadStatus @default(NEW)
+  lastMessage String? @map("last_message")
+  size        String? @map("size")
+  location    String? @map("location")
+
+  @@index([tenantId])
+  @@index([tenantId, phone])
+  @@unique([tenantId, phone])
+  @@map("leads")
+}
+
+model Conversation {
+  id        String   @id @default(uuid()) @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  tenantId String @map("tenant_id") @db.Uuid
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  channelType ChannelType @map("channel_type")
+
+  externalUserId   String    @map("external_user_id")
+  externalUserName String?   @map("external_user_name")
+  lastMessageAt    DateTime? @map("last_message_at")
+
+  salesStep String @default("idle") @map("sales_step")
+  tempData  Json?  @map("temp_data")
+
+  /** Locked on first user message: ar | en. Used for FAQ + system copy. */
+  language String @default("ar")
+
+  messages Message[]
+
+  @@index([tenantId, externalUserId])
+  @@map("conversations")
+}
+
+model Message {
+  id        String   @id @default(uuid()) @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  conversationId String       @map("conversation_id") @db.Uuid
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  direction MessageDirection
+  content   String
+  metadata  Json?
+
+  @@index([conversationId])
+  @@map("messages")
+}
+
+model BotSettings {
+  id        String   @id @default(uuid()) @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  tenantId String @unique @map("tenant_id") @db.Uuid
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  aiEnabled       Boolean @default(false) @map("ai_enabled")
+  fallbackMessage String  @default("سيتم الرد عليك قريبًا") @map("fallback_message")
+
+  @@map("bot_settings")
+}

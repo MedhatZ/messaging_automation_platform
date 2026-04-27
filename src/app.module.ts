@@ -23,9 +23,9 @@ import { WhatsappAccountsModule } from './whatsapp-accounts/whatsapp-accounts.mo
 import { BroadcastModule } from './broadcast/broadcast.module';
 import { ShopModule } from './shop/shop.module';
 import { OrdersModule } from './orders/orders.module';
-import { BaileysModule } from './channels/baileys/baileys.module';
 
 const queuesDisabled = process.env.QUEUES_DISABLED === 'true';
+const baileysEnabled = process.env.BAILEYS_ENABLED === 'true';
 
 @Module({
   imports: [
@@ -68,7 +68,12 @@ const queuesDisabled = process.env.QUEUES_DISABLED === 'true';
     BroadcastModule,
     ShopModule,
     OrdersModule,
-    BaileysModule,
+    ...(baileysEnabled
+      ? // Use dynamic require to avoid Jest failing on Baileys ESM import
+        // when Baileys is not enabled.
+        // eslint-disable-next-line @typescript-eslint/no-var-requires
+        [require('./channels/baileys/baileys.module').BaileysModule]
+      : []),
   ],
   controllers: [AppController],
   providers: [AppService],

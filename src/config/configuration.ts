@@ -55,4 +55,8 @@ export default () => ({
     /** Access token TTL in seconds (default 7 days). */
     expiresInSeconds: parseInt(process.env.JWT_EXPIRES_SEC ?? '604800', 10),
   },
+  baileys: {
+    enabled: (process.env.BAILEYS_ENABLED ?? '').trim(),
+    tenantId: (process.env.BAILEYS_TENANT_ID ?? '').trim(),
+  },
 });

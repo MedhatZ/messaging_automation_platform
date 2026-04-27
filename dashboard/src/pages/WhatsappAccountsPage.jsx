@@ -55,6 +55,11 @@ export default function WhatsappAccountsPage() {
   const [savingEdit, setSavingEdit] = useState(false);
   const [toast, setToast] = useState(null);
   const [metaAppSecret, setMetaAppSecret] = useState('');
+  const [baileysStatus, setBaileysStatus] = useState({
+    status: 'disconnected',
+    qr: null,
+  });
+  const [baileysBusy, setBaileysBusy] = useState(false);
 
   const tenantReady = Boolean(tenantId && tenantId.length > 10);
 
@@ -86,6 +91,70 @@ export default function WhatsappAccountsPage() {
     if (!tenantReady) return;
     void loadAccounts();
   }, [tenantReady, loadAccounts]);
+
+  const loadBaileys = useCallback(async () => {
+    if (!tenantReady) return;
+    try {
+      const { data } = await api.get('/baileys/qr');
+      setBaileysStatus({
+        status: data?.status ?? 'disconnected',
+        qr: data?.qr ?? null,
+      });
+    } catch {
+      // ignore (Baileys might be disabled server-side)
+    }
+  }, [tenantReady]);
+
+  useEffect(() => {
+    void loadBaileys();
+  }, [loadBaileys]);
+
+  useEffect(() => {
+    if (!tenantReady) return undefined;
+    if (baileysStatus?.status !== 'connecting') return undefined;
+    const id = setInterval(() => void loadBaileys(), 2500);
+    return () => clearInterval(id);
+  }, [tenantReady, baileysStatus?.status, loadBaileys]);
+
+  async function connectBaileys() {
+    setBaileysBusy(true);
+    setError(null);
+    try {
+      const { data } = await api.post('/baileys/connect');
+      setBaileysStatus({
+        status: data?.status ?? 'connecting',
+        qr: data?.qr ?? null,
+      });
+    } catch (err) {
+      const msg =
+        err.response?.data?.message ||
+        err.message ||
+        'Failed to start Baileys connection';
+      setError(typeof msg === 'string' ? msg : JSON.stringify(msg));
+    } finally {
+      setBaileysBusy(false);
+    }
+  }
+
+  async function disconnectBaileys() {
+    setBaileysBusy(true);
+    setError(null);
+    try {
+      const { data } = await api.post('/baileys/disconnect');
+      setBaileysStatus({
+        status: data?.status ?? 'disconnected',
+        qr: data?.qr ?? null,
+      });
+    } catch (err) {
+      const msg =
+        err.response?.data?.message ||
+        err.message ||
+        'Failed to disconnect Baileys';
+      setError(typeof msg === 'string' ? msg : JSON.stringify(msg));
+    } finally {
+      setBaileysBusy(false);
+    }
+  }
 
   function handleLogout() {
     logout();
@@ -258,6 +327,79 @@ export default function WhatsappAccountsPage() {
       )}
 
       {error && <div className="error">{error}</div>}
+
+      <h2 className="section-title">WhatsApp QR (Baileys)</h2>
+      <div className="card" style={{ marginBottom: 18 }}>
+        <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+          <div style={{ minWidth: 220 }}>
+            <div style={{ marginBottom: 8, color: '#666' }}>
+              Status: <span className="mono">{baileysStatus?.status ?? '—'}</span>
+            </div>
+            <div className="actions actions-wrap">
+              <button
+                type="button"
+                className="btn-primary"
+                onClick={connectBaileys}
+                disabled={!tenantReady || baileysBusy}
+              >
+                {baileysBusy ? '...' : 'Connect / Show QR'}
+              </button>
+              <button
+                type="button"
+                className="btn-delete"
+                onClick={disconnectBaileys}
+                disabled={!tenantReady || baileysBusy}
+              >
+                Disconnect
+              </button>
+              <button
+                type="button"
+                className="btn-edit"
+                onClick={() => void loadBaileys()}
+                disabled={!tenantReady || baileysBusy}
+              >
+                Refresh
+              </button>
+            </div>
+            <p className="field-hint" style={{ marginTop: 10 }}>
+              امسح الـ QR من WhatsApp على الموبايل: Linked devices → Link a device.
+            </p>
+          </div>
+
+          <div style={{ minWidth: 220 }}>
+            {baileysStatus?.qr ? (
+              <img
+                alt="WhatsApp QR"
+                style={{
+                  width: 220,
+                  height: 220,
+                  borderRadius: 12,
+                  background: '#fff',
+                  border: '1px solid #e6e6e6',
+                }}
+                src={`https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=${encodeURIComponent(
+                  baileysStatus.qr,
+                )}`}
+              />
+            ) : (
+              <div
+                style={{
+                  width: 220,
+                  height: 220,
+                  borderRadius: 12,
+                  border: '1px dashed #ddd',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  color: '#777',
+                }}
+              >
+                No QR
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
 
       <h2 className="section-title">{t('waAccounts.title')}</h2>
 

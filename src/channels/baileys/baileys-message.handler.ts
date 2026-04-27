@@ -16,42 +16,38 @@ export class BaileysMessageHandler {
   ) {}
 
   @OnEvent('baileys.message')
-  async handleMessage(payload: { from: string; text: string }) {
-    const { from, text } = payload;
+  async handleMessage(payload: { tenantId: string; from: string; text: string }) {
+    const { tenantId, from, text } = payload;
     const phone = from.replace('@s.whatsapp.net', '').replace('@g.us', '');
-
-    // جيب أول tenant نشط (في multi-tenant هتحتاج تربط كل رقم بـ tenant)
-    const tenant = await this.prisma.tenant.findFirst({
-      where: { isActive: true },
-      select: { id: true },
+    const tenant = await this.prisma.tenant.findUnique({
+      where: { id: tenantId },
+      select: { id: true, isActive: true, slug: true, name: true },
     });
-
     if (!tenant) {
-      this.logger.warn('No active tenant found');
+      this.logger.warn(`Tenant not found: tenantId=${tenantId}`);
+      return;
+    }
+    if (!tenant.isActive) {
+      this.logger.warn(`Tenant inactive: tenantId=${tenantId}`);
       return;
     }
 
     try {
       // رسالة الترحيب لأول رسالة
       const isFirst = !(await this.prisma.conversation.findFirst({
-        where: { tenantId: tenant.id, externalUserId: phone },
+        where: { tenantId, externalUserId: phone },
         select: { id: true },
       }));
 
       if (isFirst) {
         const settings = await this.prisma.botSettings.findUnique({
-          where: { tenantId: tenant.id },
+          where: { tenantId },
           select: { welcomeMessage: true, welcomeImages: true },
-        });
-
-        const tenant_data = await this.prisma.tenant.findUnique({
-          where: { id: tenant.id },
-          select: { slug: true, name: true },
         });
 
         // ابعت رسالة الترحيب
         if (settings?.welcomeMessage?.trim()) {
-          await this.baileys.sendText(from, settings.welcomeMessage.trim());
+          await this.baileys.sendText(tenantId, from, settings.welcomeMessage.trim());
           await new Promise((r) => setTimeout(r, 1000));
         }
 
@@ -59,30 +55,27 @@ export class BaileysMessageHandler {
         if (Array.isArray(settings?.welcomeImages)) {
           for (const img of settings.welcomeImages) {
             if (img?.trim()) {
-              await this.baileys.sendImage(from, img.trim());
+              await this.baileys.sendImage(tenantId, from, img.trim());
               await new Promise((r) => setTimeout(r, 1000));
             }
           }
         }
 
         // ابعت رابط صفحة الشراء
-        if (tenant_data?.slug) {
-          const shopUrl = `https://messaging-automation-platform.vercel.app/shop.html?slug=${tenant_data.slug}`;
-          await this.baileys.sendText(
-            from,
-            `🛒 تقدر تشوف منتجاتنا وتطلب من هنا:\n${shopUrl}`,
-          );
+        if (tenant.slug) {
+          const shopUrl = `https://messaging-automation-platform.vercel.app/shop.html?slug=${tenant.slug}`;
+          await this.baileys.sendText(tenantId, from, `🛒 تقدر تشوف منتجاتنا وتطلب من هنا:\n${shopUrl}`);
           await new Promise((r) => setTimeout(r, 500));
         }
       }
 
       const waAccount = await this.prisma.whatsappAccount.findFirst({
-        where: { tenantId: tenant.id, status: 'active' },
+        where: { tenantId, status: 'active' },
         select: { id: true },
       });
 
       const result = await this.chatService.processMessage({
-        tenantId: tenant.id,
+        tenantId,
         channelType: ChannelType.WHATSAPP,
         externalUserId: phone,
         externalUserName: undefined,
@@ -96,6 +89,7 @@ export class BaileysMessageHandler {
           for (const p of result.products) {
             if (p.imageUrl) {
               await this.baileys.sendImage(
+                tenantId,
                 from,
                 p.imageUrl,
                 `${p.name}\nالسعر: ${p.price} جنيه`,
@@ -105,7 +99,7 @@ export class BaileysMessageHandler {
           }
         }
         // ابعت الرد النصي
-        await this.baileys.sendText(from, result.reply);
+        await this.baileys.sendText(tenantId, from, result.reply);
       }
     } catch (e) {
       this.logger.error('Message handling failed', e);

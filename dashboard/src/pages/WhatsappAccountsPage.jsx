@@ -54,6 +54,7 @@ export default function WhatsappAccountsPage() {
   const [editRow, setEditRow] = useState(null);
   const [savingEdit, setSavingEdit] = useState(false);
   const [toast, setToast] = useState(null);
+  const [metaAppSecret, setMetaAppSecret] = useState('');
 
   const tenantReady = Boolean(tenantId && tenantId.length > 10);
 
@@ -111,6 +112,7 @@ export default function WhatsappAccountsPage() {
       await api.post('/whatsapp-accounts', {
         metaPhoneNumberId,
         accessToken,
+        metaAppSecret: metaAppSecret.trim() || undefined,
         ...(createForm.metaWabaId.trim()
           ? { metaWabaId: createForm.metaWabaId.trim() }
           : {}),
@@ -119,6 +121,7 @@ export default function WhatsappAccountsPage() {
           : {}),
       });
       setCreateForm(emptyForm);
+      setMetaAppSecret('');
       await loadAccounts();
       setToast({ type: 'success', text: t('common.save') });
     } catch (err) {
@@ -300,6 +303,15 @@ export default function WhatsappAccountsPage() {
                 }))
               }
               maxLength={32}
+            />
+          </label>
+          <label className="field field-wide">
+            <span>Meta App Secret (اختياري)</span>
+            <input
+              type="password"
+              value={metaAppSecret}
+              onChange={(e) => setMetaAppSecret(e.target.value)}
+              placeholder="سر تطبيق Meta لتوثيق الـ Webhook"
             />
           </label>
           <label className="field">

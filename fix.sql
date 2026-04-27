@@ -24,3 +24,5 @@ CREATE TABLE IF NOT EXISTS "orders" (
 CREATE INDEX IF NOT EXISTS "orders_tenant_id_idx" ON "orders"("tenant_id");
 CREATE INDEX IF NOT EXISTS "orders_tenant_id_status_idx" ON "orders"("tenant_id", "status");
 CREATE INDEX IF NOT EXISTS "orders_created_at_idx" ON "orders"("created_at");
+
+ALTER TABLE "whatsapp_accounts" ADD COLUMN IF NOT EXISTS "meta_app_secret" TEXT;

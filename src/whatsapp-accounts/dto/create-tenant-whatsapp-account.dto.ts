@@ -29,4 +29,9 @@ export class CreateTenantWhatsappAccountDto {
   @IsString()
   @MaxLength(256)
   verifyToken?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(256)
+  metaAppSecret?: string;
 }

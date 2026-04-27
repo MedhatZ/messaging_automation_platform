@@ -29,6 +29,11 @@ export class UpdateTenantWhatsappAccountDto {
 
   @IsOptional()
   @IsString()
+  @MaxLength(256)
+  metaAppSecret?: string;
+
+  @IsOptional()
+  @IsString()
   @IsIn(['active', 'disabled'])
   status?: string;
 }

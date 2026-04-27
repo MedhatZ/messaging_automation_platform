@@ -24,6 +24,7 @@ const publicSelect = {
   metaWabaId: true,
   displayPhoneNumber: true,
   accessTokenLast4: true,
+  metaAppSecret: true,
   status: true,
   createdAt: true,
   updatedAt: true,
@@ -66,6 +67,7 @@ export class WhatsappAccountsService {
           accessTokenEncrypted,
           accessTokenLast4,
           verifyToken: dto.verifyToken?.trim() || null,
+          metaAppSecret: dto.metaAppSecret?.trim() || null,
           status: 'active',
         },
         select: publicSelect,
@@ -100,6 +102,8 @@ export class WhatsappAccountsService {
       dto.metaPhoneNumberId !== undefined ||
       dto.metaWabaId !== undefined ||
       dto.displayPhoneNumber !== undefined ||
+      dto.verifyToken !== undefined ||
+      dto.metaAppSecret !== undefined ||
       dto.status !== undefined ||
       (dto.accessToken !== undefined && dto.accessToken.trim() !== '');
     if (!hasPatch) {
@@ -123,6 +127,12 @@ export class WhatsappAccountsService {
     }
     if (dto.displayPhoneNumber !== undefined) {
       data.displayPhoneNumber = dto.displayPhoneNumber.trim() || null;
+    }
+    if (dto.verifyToken !== undefined) {
+      data.verifyToken = dto.verifyToken.trim() || null;
+    }
+    if (dto.metaAppSecret !== undefined) {
+      data.metaAppSecret = dto.metaAppSecret.trim() || null;
     }
     if (dto.status !== undefined) {
       data.status = dto.status;

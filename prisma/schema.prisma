@@ -66,6 +66,7 @@ model WhatsappAccount {
   /** Last 4 chars of the access token (for UI masking only). */
   accessTokenLast4    String?  @map("access_token_last_4") @db.VarChar(4)
   verifyToken          String?  @map("verify_token")
+  metaAppSecret        String?  @map("meta_app_secret")
   status               String   @default("active")
   createdAt            DateTime @default(now()) @map("created_at")
   updatedAt            DateTime @updatedAt @map("updated_at")

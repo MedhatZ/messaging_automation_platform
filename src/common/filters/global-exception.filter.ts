@@ -60,6 +60,12 @@ export class GlobalExceptionFilter implements ExceptionFilter {
       }),
     );
 
+    if (status === 500) {
+      this.logger.error(
+        exception instanceof Error ? exception.stack : String(exception),
+      );
+    }
+
     const payload =
       typeof body === 'object' && body !== null && !Array.isArray(body)
         ? (body as Record<string, unknown>)

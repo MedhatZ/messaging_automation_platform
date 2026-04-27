@@ -180,11 +180,14 @@ ${memoryText}
 
     // Try env-provided model(s) first, then a few common stable identifiers.
     const fallbacks = [
-      'claude-3-5-haiku-latest',
-      'claude-3-5-sonnet-latest',
-      'claude-3-haiku-20240307',
-      'claude-3-sonnet-20240229',
-      'claude-3-opus-20240229',
+      // Current (2026) Claude API model IDs / aliases
+      'claude-haiku-4-5',
+      'claude-haiku-4-5-20251001',
+      'claude-sonnet-4-6',
+      'claude-opus-4-7',
+      // Still-available older aliases (may depend on account access)
+      'claude-sonnet-4-5',
+      'claude-opus-4-6',
     ];
 
     const out: string[] = [];

@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { unlinkSync } from 'node:fs';
 import { extname, join } from 'node:path';
+import type { Request } from 'express';
 import {
   BadRequestException,
   Controller,
@@ -12,6 +13,7 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { FilesInterceptor } from '@nestjs/platform-express';
 import { diskStorage } from 'multer';
+import type { FileFilterCallback } from 'multer';
 import { ClientTenantGuard } from '../auth/guards/client-tenant.guard';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 
@@ -29,10 +31,18 @@ export class UploadController {
   @UseInterceptors(
     FilesInterceptor('files', 20, {
       storage: diskStorage({
-        destination: (_req, _file, cb) => {
+        destination: (
+          _req: Request,
+          _file: Express.Multer.File,
+          cb: FileFilterCallback,
+        ) => {
           cb(null, UPLOAD_DIR);
         },
-        filename: (_req, file, cb) => {
+        filename: (
+          _req: Request,
+          file: Express.Multer.File,
+          cb: FileFilterCallback,
+        ) => {
           const ext = extname(file.originalname || '') || '';
           const safe = /^\.[a-z0-9]{1,8}$/i.test(ext) ? ext : '';
           cb(null, `${randomUUID()}${safe}`);
@@ -66,10 +76,18 @@ export class UploadController {
   @UseInterceptors(
     FilesInterceptor('files', 10, {
       storage: diskStorage({
-        destination: (_req, _file, cb) => {
+        destination: (
+          _req: Request,
+          _file: Express.Multer.File,
+          cb: FileFilterCallback,
+        ) => {
           cb(null, UPLOAD_DIR);
         },
-        filename: (_req, file, cb) => {
+        filename: (
+          _req: Request,
+          file: Express.Multer.File,
+          cb: FileFilterCallback,
+        ) => {
           const ext = extname(file.originalname || '') || '';
           const safe = /^\.[a-z0-9]{1,8}$/i.test(ext) ? ext : '';
           cb(null, `${randomUUID()}${safe}`);

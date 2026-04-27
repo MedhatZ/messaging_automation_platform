@@ -2,6 +2,9 @@ import { io } from 'socket.io-client';
 
 let socket = null;
 
+const API_URL = import.meta.env.VITE_API_URL ?? '';
+const normalizedBaseUrl = API_URL.replace(/\/+$/, '');
+
 function getToken() {
   return localStorage.getItem('accessToken') || '';
 }
@@ -17,8 +20,10 @@ export const socketService = {
 
     if (socket && socket.connected) return socket;
 
+    const url = normalizedBaseUrl ? `${normalizedBaseUrl}/conversations` : '/conversations';
+
     // Same-origin connection (Vite proxy handles /socket.io in dev).
-    socket = io('/conversations', {
+    socket = io(url, {
       path: '/socket.io',
       transports: ['websocket'],
       autoConnect: true,

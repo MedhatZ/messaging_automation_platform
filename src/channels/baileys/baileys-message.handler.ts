@@ -32,6 +32,50 @@ export class BaileysMessageHandler {
     }
 
     try {
+      // رسالة الترحيب لأول رسالة
+      const isFirst = !(await this.prisma.conversation.findFirst({
+        where: { tenantId: tenant.id, externalUserId: phone },
+        select: { id: true },
+      }));
+
+      if (isFirst) {
+        const settings = await this.prisma.botSettings.findUnique({
+          where: { tenantId: tenant.id },
+          select: { welcomeMessage: true, welcomeImages: true },
+        });
+
+        const tenant_data = await this.prisma.tenant.findUnique({
+          where: { id: tenant.id },
+          select: { slug: true, name: true },
+        });
+
+        // ابعت رسالة الترحيب
+        if (settings?.welcomeMessage?.trim()) {
+          await this.baileys.sendText(from, settings.welcomeMessage.trim());
+          await new Promise((r) => setTimeout(r, 1000));
+        }
+
+        // ابعت الصور
+        if (Array.isArray(settings?.welcomeImages)) {
+          for (const img of settings.welcomeImages) {
+            if (img?.trim()) {
+              await this.baileys.sendImage(from, img.trim());
+              await new Promise((r) => setTimeout(r, 1000));
+            }
+          }
+        }
+
+        // ابعت رابط صفحة الشراء
+        if (tenant_data?.slug) {
+          const shopUrl = `https://messaging-automation-platform.vercel.app/shop.html?slug=${tenant_data.slug}`;
+          await this.baileys.sendText(
+            from,
+            `🛒 تقدر تشوف منتجاتنا وتطلب من هنا:\n${shopUrl}`,
+          );
+          await new Promise((r) => setTimeout(r, 500));
+        }
+      }
+
       const result = await this.chatService.processMessage({
         tenantId: tenant.id,
         channelType: ChannelType.WHATSAPP,

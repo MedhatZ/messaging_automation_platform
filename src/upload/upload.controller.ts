@@ -13,7 +13,6 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { FilesInterceptor } from '@nestjs/platform-express';
 import { diskStorage } from 'multer';
-import type { FileFilterCallback } from 'multer';
 import { ClientTenantGuard } from '../auth/guards/client-tenant.guard';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 
@@ -34,14 +33,14 @@ export class UploadController {
         destination: (
           _req: Request,
           _file: Express.Multer.File,
-          cb: FileFilterCallback,
+          cb: (error: Error | null, destination: string) => void,
         ) => {
           cb(null, UPLOAD_DIR);
         },
         filename: (
           _req: Request,
           file: Express.Multer.File,
-          cb: FileFilterCallback,
+          cb: (error: Error | null, filename: string) => void,
         ) => {
           const ext = extname(file.originalname || '') || '';
           const safe = /^\.[a-z0-9]{1,8}$/i.test(ext) ? ext : '';
@@ -79,14 +78,14 @@ export class UploadController {
         destination: (
           _req: Request,
           _file: Express.Multer.File,
-          cb: FileFilterCallback,
+          cb: (error: Error | null, destination: string) => void,
         ) => {
           cb(null, UPLOAD_DIR);
         },
         filename: (
           _req: Request,
           file: Express.Multer.File,
-          cb: FileFilterCallback,
+          cb: (error: Error | null, filename: string) => void,
         ) => {
           const ext = extname(file.originalname || '') || '';
           const safe = /^\.[a-z0-9]{1,8}$/i.test(ext) ? ext : '';

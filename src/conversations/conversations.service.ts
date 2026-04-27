@@ -70,4 +70,59 @@ export class ConversationsService {
       },
     });
   }
+
+  async getStats(tenantId: string) {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const [total, byStatus, todayCount, topProducts] = await Promise.all([
+      this.prisma.conversation.count({ where: { tenantId } }),
+
+      this.prisma.conversation.groupBy({
+        by: ['leadStatus'],
+        where: { tenantId },
+        _count: { _all: true },
+      }),
+
+      this.prisma.conversation.count({
+        where: { tenantId, lastMessageAt: { gte: today } },
+      }),
+
+      this.prisma.productView.groupBy({
+        by: ['productId'],
+        where: { tenantId },
+        _count: { productId: true },
+        orderBy: { _count: { productId: 'desc' } },
+        take: 5,
+      }),
+    ]);
+
+    const statusMap = Object.fromEntries(
+      byStatus.map((s) => [s.leadStatus, s._count._all]),
+    ) as Record<string, number>;
+
+    const productIds = topProducts.map((p) => p.productId);
+    const productRows =
+      productIds.length === 0
+        ? []
+        : await this.prisma.product.findMany({
+            where: { id: { in: productIds } },
+            select: { id: true, name: true },
+          });
+    const productNameMap = Object.fromEntries(
+      productRows.map((p) => [p.id, p.name]),
+    ) as Record<string, string>;
+
+    return {
+      total,
+      new: statusMap['new'] ?? 0,
+      interested: statusMap['interested'] ?? 0,
+      hot: statusMap['hot'] ?? 0,
+      today: todayCount,
+      topProducts: topProducts.map((p) => ({
+        name: productNameMap[p.productId] ?? p.productId,
+        count: p._count.productId,
+      })),
+    };
+  }
 }

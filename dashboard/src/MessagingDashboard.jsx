@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { api } from './api.js';
 import { useAuth } from './auth/AuthContext.jsx';
 import { LanguageSwitcher } from './components/LanguageSwitcher.jsx';
+import { socketService } from './services/socket.service.js';
 
 function formatDate(iso, locale) {
   if (!iso) return '\u2014';
@@ -22,15 +23,49 @@ function statusClass(status) {
   return 'status';
 }
 
+function basenameFromUrl(url) {
+  try {
+    const path = new URL(url).pathname;
+    const seg = path.split('/').filter(Boolean).pop();
+    return seg ? decodeURIComponent(seg) : url;
+  } catch {
+    return url.length > 48 ? `${url.slice(0, 45)}…` : url;
+  }
+}
+
 export default function MessagingDashboard() {
   const { t, i18n } = useTranslation();
   const navigate = useNavigate();
-  const { user, logout } = useAuth();
+  const { user, token, logout } = useAuth();
   const tenantId = user?.tenantId ?? '';
   const dir = i18n.language?.startsWith('ar') ? 'rtl' : 'ltr';
   const locale = i18n.language;
+  const agentName = useMemo(() => user?.email || user?.userId || 'agent', [user]);
 
   const [view, setView] = useState('leads');
+  const [stats, setStats] = useState(null);
+  const [statsLoading, setStatsLoading] = useState(false);
+  const [orders, setOrders] = useState([]);
+  const [ordersLoading, setOrdersLoading] = useState(false);
+
+  // Store settings
+  const [settings, setSettings] = useState({
+    storeName: '',
+    slug: '',
+    welcomeMessage: '',
+    welcomeImages: [],
+    welcomeVideos: [],
+  });
+  const [settingsLoading, setSettingsLoading] = useState(false);
+  const [savingSettings, setSavingSettings] = useState(false);
+  const [uploadingWelcomeImages, setUploadingWelcomeImages] = useState(false);
+  const [uploadingWelcomeVideos, setUploadingWelcomeVideos] = useState(false);
+
+  // Broadcast
+  const [broadcastMsg, setBroadcastMsg] = useState('');
+  const [broadcastFilter, setBroadcastFilter] = useState('all');
+  const [broadcastResult, setBroadcastResult] = useState(null);
+  const [broadcasting, setBroadcasting] = useState(false);
 
   const [leads, setLeads] = useState([]);
   const [leadsLoading, setLeadsLoading] = useState(true);
@@ -40,6 +75,7 @@ export default function MessagingDashboard() {
 
   const [products, setProducts] = useState([]);
   const [productsLoading, setProductsLoading] = useState(false);
+  const [productAffinity, setProductAffinity] = useState({});
   const [productForm, setProductForm] = useState({
     name: '',
     price: '',
@@ -71,6 +107,23 @@ export default function MessagingDashboard() {
   const [selectedConvId, setSelectedConvId] = useState(null);
   const [messages, setMessages] = useState([]);
   const [msgLoading, setMsgLoading] = useState(false);
+  const selectedConvIdRef = useRef(null);
+
+  const [memoryStats, setMemoryStats] = useState(null);
+  const [memoryLoading, setMemoryLoading] = useState(false);
+  const [memoryQuery, setMemoryQuery] = useState('');
+  const [memoryResults, setMemoryResults] = useState([]);
+  const [memorySearching, setMemorySearching] = useState(false);
+  const [memoryClearing, setMemoryClearing] = useState(false);
+
+  const [recommendations, setRecommendations] = useState([]);
+  const [recsLoading, setRecsLoading] = useState(false);
+
+  const [socketConnected, setSocketConnected] = useState(false);
+  const [typingStatus, setTypingStatus] = useState(null); // { conversationId, status, at }
+  const [lastAgentJoined, setLastAgentJoined] = useState(null); // { agentName, at }
+  const [agentDraft, setAgentDraft] = useState('');
+  const typingTimerRef = useRef(null);
 
   const tenantReady = Boolean(tenantId && tenantId.length > 10);
 
@@ -115,7 +168,23 @@ export default function MessagingDashboard() {
     setProductsLoading(true);
     try {
       const { data } = await api.get('/products');
-      setProducts(Array.isArray(data) ? data : []);
+      const rows = Array.isArray(data) ? data : [];
+      setProducts(rows);
+      const affinities = await Promise.all(
+        rows.slice(0, 50).map(async (p) => {
+          try {
+            const res = await api.get(`/products/affinity/${p.id}`);
+            return [p.id, res.data];
+          } catch {
+            return [p.id, null];
+          }
+        }),
+      );
+      const map = {};
+      affinities.forEach(([id, a]) => {
+        if (a) map[id] = a;
+      });
+      setProductAffinity(map);
     } catch (e) {
       const msg =
         e.response?.data?.message ||
@@ -144,12 +213,67 @@ export default function MessagingDashboard() {
     }
   }, [t]);
 
+  const loadStats = useCallback(async () => {
+    setStatsLoading(true);
+    setError(null);
+    try {
+      const { data } = await api.get('/conversations/stats');
+      setStats(data ?? null);
+    } catch (e) {
+      const msg = e.response?.data?.message || e.message || 'فشل تحميل التقارير';
+      setError(typeof msg === 'string' ? msg : JSON.stringify(msg));
+    } finally {
+      setStatsLoading(false);
+    }
+  }, []);
+
+  const loadOrders = useCallback(async () => {
+    setOrdersLoading(true);
+    setError(null);
+    try {
+      const { data } = await api.get('/orders');
+      setOrders(Array.isArray(data) ? data : []);
+    } catch (e) {
+      const msg = e.response?.data?.message || e.message || 'فشل تحميل الطلبات';
+      setError(typeof msg === 'string' ? msg : JSON.stringify(msg));
+    } finally {
+      setOrdersLoading(false);
+    }
+  }, []);
+
+  const loadSettings = useCallback(async () => {
+    setSettingsLoading(true);
+    setError(null);
+    try {
+      const { data } = await api.get('/tenants/settings');
+      const next = data ?? {};
+      const imgs = Array.isArray(next.welcomeImages) ? next.welcomeImages : [];
+      const vids = Array.isArray(next.welcomeVideos) ? next.welcomeVideos : [];
+      setSettings({
+        storeName: next.storeName ?? '',
+        slug: next.slug ?? '',
+        welcomeMessage: next.welcomeMessage ?? '',
+        welcomeImages: imgs,
+        welcomeVideos: vids,
+      });
+    } catch (e) {
+      const msg =
+        e.response?.data?.message || e.message || 'فشل تحميل الإعدادات';
+      setError(typeof msg === 'string' ? msg : JSON.stringify(msg));
+    } finally {
+      setSettingsLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     if (!tenantReady) return;
     if (view === 'leads') loadLeads();
     else if (view === 'conversations') loadConversations();
     else if (view === 'products') loadProducts();
     else if (view === 'faq') loadFaqs();
+    else if (view === 'stats') loadStats();
+    else if (view === 'orders') loadOrders();
+    else if (view === 'settings') loadSettings();
   }, [
     view,
     tenantReady,
@@ -157,7 +281,138 @@ export default function MessagingDashboard() {
     loadConversations,
     loadProducts,
     loadFaqs,
+    loadStats,
+    loadOrders,
+    loadSettings,
   ]);
+
+  async function updateOrderStatus(id, status) {
+    try {
+      await api.patch(`/orders/${id}`, { status });
+      await loadOrders();
+    } catch (e) {
+      const msg = e.response?.data?.message || e.message || 'فشل التحديث';
+      setError(typeof msg === 'string' ? msg : JSON.stringify(msg));
+    }
+  }
+
+  async function saveSettings(e) {
+    e.preventDefault();
+    setSavingSettings(true);
+    setError(null);
+    try {
+      const payload = {
+        storeName: settings.storeName,
+        slug: settings.slug,
+        welcomeMessage: settings.welcomeMessage,
+        welcomeImages: settings.welcomeImages,
+        welcomeVideos: settings.welcomeVideos,
+      };
+      const { data } = await api.patch('/tenants/settings', payload);
+      const imgs = Array.isArray(data?.welcomeImages)
+        ? data.welcomeImages
+        : settings.welcomeImages;
+      const vids = Array.isArray(data?.welcomeVideos)
+        ? data.welcomeVideos
+        : settings.welcomeVideos;
+      setSettings((prev) => ({
+        ...prev,
+        welcomeImages: imgs,
+        welcomeVideos: vids,
+      }));
+    } catch (e) {
+      const msg =
+        e.response?.data?.message || e.message || 'فشل حفظ الإعدادات';
+      setError(typeof msg === 'string' ? msg : JSON.stringify(msg));
+    } finally {
+      setSavingSettings(false);
+    }
+  }
+
+  async function uploadWelcomeImages(e) {
+    const files = Array.from(e.target.files || []);
+    e.target.value = '';
+    if (files.length === 0) return;
+    setError(null);
+    setUploadingWelcomeImages(true);
+    try {
+      const formData = new FormData();
+      files.slice(0, 20).forEach((file) => formData.append('files', file));
+      const { data } = await api.post('/upload/images', formData);
+      const urls = Array.isArray(data?.urls) ? data.urls : [];
+      setSettings((prev) => ({
+        ...prev,
+        welcomeImages: [...prev.welcomeImages, ...urls].slice(0, 20),
+      }));
+    } catch (e) {
+      const msg =
+        e.response?.data?.message || e.message || 'فشل رفع الصور';
+      setError(typeof msg === 'string' ? msg : JSON.stringify(msg));
+    } finally {
+      setUploadingWelcomeImages(false);
+    }
+  }
+
+  async function uploadWelcomeVideos(e) {
+    const files = Array.from(e.target.files || []);
+    e.target.value = '';
+    if (files.length === 0) return;
+    setError(null);
+    setUploadingWelcomeVideos(true);
+    try {
+      const formData = new FormData();
+      files.slice(0, 10).forEach((file) => formData.append('files', file));
+      const { data } = await api.post('/upload/videos', formData);
+      const urls = Array.isArray(data?.urls) ? data.urls : [];
+      setSettings((prev) => ({
+        ...prev,
+        welcomeVideos: [...prev.welcomeVideos, ...urls].slice(0, 10),
+      }));
+    } catch (e) {
+      const msg =
+        e.response?.data?.message || e.message || 'فشل رفع الفيديو';
+      setError(typeof msg === 'string' ? msg : JSON.stringify(msg));
+    } finally {
+      setUploadingWelcomeVideos(false);
+    }
+  }
+
+  function removeWelcomeImage(index) {
+    setSettings((prev) => ({
+      ...prev,
+      welcomeImages: prev.welcomeImages.filter((_, i) => i !== index),
+    }));
+  }
+
+  function removeWelcomeVideo(index) {
+    setSettings((prev) => ({
+      ...prev,
+      welcomeVideos: prev.welcomeVideos.filter((_, i) => i !== index),
+    }));
+  }
+
+  async function sendBroadcast(e) {
+    e.preventDefault();
+    const msg = broadcastMsg.trim();
+    if (!msg) return;
+    setBroadcasting(true);
+    setBroadcastResult(null);
+    setError(null);
+    try {
+      const { data } = await api.post('/broadcast', {
+        tenantId,
+        message: msg,
+        filter: broadcastFilter,
+      });
+      setBroadcastResult(data);
+      setBroadcastMsg('');
+    } catch (err) {
+      const errMsg = err.response?.data?.message || err.message || 'فشل الإرسال';
+      setError(typeof errMsg === 'string' ? errMsg : JSON.stringify(errMsg));
+    } finally {
+      setBroadcasting(false);
+    }
+  }
 
   async function patchStatus(id, status) {
     setBusyId(id);
@@ -178,12 +433,24 @@ export default function MessagingDashboard() {
 
   async function openConversation(id) {
     setSelectedConvId(id);
+    selectedConvIdRef.current = id;
     setMessages([]);
     setMsgLoading(true);
+    setMemoryStats(null);
+    setMemoryResults([]);
+    setMemoryQuery('');
+    setRecommendations([]);
     setError(null);
     try {
       const { data } = await api.get(`/conversations/${id}/messages`);
       setMessages(Array.isArray(data) ? data : []);
+      const stats = await api.get(`/conversations/${id}/memory-stats`);
+      setMemoryStats(stats?.data ?? null);
+      setRecsLoading(true);
+      const recs = await api.get(`/products/recommendations/${id}`);
+      setRecommendations(Array.isArray(recs?.data) ? recs.data : []);
+
+      socketService.joinConversation(id, agentName);
     } catch (e) {
       const msg =
         e.response?.data?.message ||
@@ -193,12 +460,205 @@ export default function MessagingDashboard() {
       setSelectedConvId(null);
     } finally {
       setMsgLoading(false);
+      setRecsLoading(false);
     }
   }
 
   function closeConversation() {
+    if (selectedConvIdRef.current) {
+      socketService.leaveConversation(selectedConvIdRef.current);
+    }
     setSelectedConvId(null);
+    selectedConvIdRef.current = null;
     setMessages([]);
+    setMemoryStats(null);
+    setMemoryResults([]);
+    setMemoryQuery('');
+    setRecommendations([]);
+    setTypingStatus(null);
+    setLastAgentJoined(null);
+    setAgentDraft('');
+  }
+
+  // Connect socket after login (token available)
+  useEffect(() => {
+    if (!token) {
+      socketService.disconnect();
+      setSocketConnected(false);
+      return;
+    }
+
+    const s = socketService.connect({ token });
+    if (!s) return;
+
+    const onConnect = () => setSocketConnected(true);
+    const onDisconnect = () => setSocketConnected(false);
+
+    const onNewMessage = (payload) => {
+      const convId = payload?.conversationId;
+      const msg = payload?.message;
+      const at = payload?.at;
+      if (!convId || !msg) return;
+
+      // Update thread UI if this conversation is open
+      if (selectedConvIdRef.current === convId) {
+        setMessages((prev) => [
+          ...(Array.isArray(prev) ? prev : []),
+          {
+            id: `${Date.now()}-${Math.random()}`,
+            direction: msg.direction === 'OUTGOING' ? 'OUTGOING' : 'INCOMING',
+            content: msg.content ?? '',
+            createdAt: at ?? new Date().toISOString(),
+          },
+        ]);
+      }
+
+      // Update conversation list last message preview/time
+      setConversations((prev) => {
+        if (!Array.isArray(prev)) return prev;
+        return prev.map((c) =>
+          c.id !== convId
+            ? c
+            : {
+                ...c,
+                lastMessageAt: at ?? c.lastMessageAt,
+                lastMessageContent: msg.content ?? c.lastMessageContent,
+              },
+        );
+      });
+    };
+
+    const onConversationUpdated = (payload) => {
+      const convId = payload?.conversationId;
+      const data = payload?.data;
+      const at = payload?.at;
+      if (!convId) return;
+
+      setConversations((prev) => {
+        if (!Array.isArray(prev)) return prev;
+        return prev.map((c) =>
+          c.id !== convId
+            ? c
+            : {
+                ...c,
+                ...(data?.lastMessageAt ? { lastMessageAt: data.lastMessageAt } : {}),
+                ...(at && !data?.lastMessageAt ? { lastMessageAt: at } : {}),
+              },
+        );
+      });
+    };
+
+    const onAgentJoined = (payload) => {
+      const convId = payload?.conversationId;
+      if (!convId) return;
+      if (selectedConvIdRef.current !== convId) return;
+      setLastAgentJoined({
+        agentName: payload?.agentName ?? '',
+        at: payload?.at ?? new Date().toISOString(),
+      });
+    };
+
+    const onTyping = (payload) => {
+      const convId = payload?.conversationId;
+      if (!convId) return;
+      if (selectedConvIdRef.current !== convId) return;
+      setTypingStatus({
+        conversationId: convId,
+        status: payload?.status ?? 'start',
+        at: payload?.at ?? new Date().toISOString(),
+      });
+    };
+
+    s.on('connect', onConnect);
+    s.on('disconnect', onDisconnect);
+
+    // Support both snake_case and dash-case event names
+    s.on('new_message', onNewMessage);
+    s.on('new-message', onNewMessage);
+    s.on('conversation_updated', onConversationUpdated);
+    s.on('conversation-updated', onConversationUpdated);
+    s.on('agent_joined', onAgentJoined);
+    s.on('agent-joined', onAgentJoined);
+    s.on('typing', onTyping);
+
+    return () => {
+      s.off('connect', onConnect);
+      s.off('disconnect', onDisconnect);
+      s.off('new_message', onNewMessage);
+      s.off('new-message', onNewMessage);
+      s.off('conversation_updated', onConversationUpdated);
+      s.off('conversation-updated', onConversationUpdated);
+      s.off('agent_joined', onAgentJoined);
+      s.off('agent-joined', onAgentJoined);
+      s.off('typing', onTyping);
+    };
+  }, [token, agentName]);
+
+  function handleAgentDraftChange(next) {
+    setAgentDraft(next);
+    const convId = selectedConvIdRef.current;
+    if (!convId) return;
+
+    socketService.typingStart(convId);
+    if (typingTimerRef.current) clearTimeout(typingTimerRef.current);
+    typingTimerRef.current = setTimeout(() => {
+      socketService.typingStop(convId);
+    }, 1200);
+  }
+
+  async function refreshMemoryStats() {
+    if (!selectedConvId) return;
+    setMemoryLoading(true);
+    setError(null);
+    try {
+      const { data } = await api.get(
+        `/conversations/${selectedConvId}/memory-stats`,
+      );
+      setMemoryStats(data ?? null);
+    } catch (e) {
+      const msg = e.response?.data?.message || e.message || t('errors.deleteFailed');
+      setError(typeof msg === 'string' ? msg : JSON.stringify(msg));
+    } finally {
+      setMemoryLoading(false);
+    }
+  }
+
+  async function searchMemory() {
+    if (!selectedConvId) return;
+    const q = memoryQuery.trim();
+    if (!q) return;
+    setMemorySearching(true);
+    setError(null);
+    try {
+      const { data } = await api.get(
+        `/conversations/${selectedConvId}/memory/search`,
+        { params: { q } },
+      );
+      setMemoryResults(Array.isArray(data) ? data : []);
+    } catch (e) {
+      const msg = e.response?.data?.message || e.message || t('errors.loadMessages');
+      setError(typeof msg === 'string' ? msg : JSON.stringify(msg));
+      setMemoryResults([]);
+    } finally {
+      setMemorySearching(false);
+    }
+  }
+
+  async function clearMemory() {
+    if (!selectedConvId) return;
+    if (!window.confirm(t('memory.confirmClear'))) return;
+    setMemoryClearing(true);
+    setError(null);
+    try {
+      await api.delete(`/conversations/${selectedConvId}/memory`);
+      setMemoryResults([]);
+      await refreshMemoryStats();
+    } catch (e) {
+      const msg = e.response?.data?.message || e.message || t('errors.deleteFailed');
+      setError(typeof msg === 'string' ? msg : JSON.stringify(msg));
+    } finally {
+      setMemoryClearing(false);
+    }
   }
 
   function parseKeywords(raw) {
@@ -494,6 +954,36 @@ export default function MessagingDashboard() {
         >
           {t('tabs.faq')}
         </button>
+        <button
+          type="button"
+          className={view === 'stats' ? 'tab active' : 'tab'}
+          onClick={() => {
+            setView('stats');
+            closeConversation();
+          }}
+        >
+          📊 التقارير
+        </button>
+        <button
+          type="button"
+          className={view === 'orders' ? 'tab active' : 'tab'}
+          onClick={() => {
+            setView('orders');
+            closeConversation();
+          }}
+        >
+          📦 الطلبات
+        </button>
+        <button
+          type="button"
+          className={view === 'settings' ? 'tab active' : 'tab'}
+          onClick={() => {
+            setView('settings');
+            closeConversation();
+          }}
+        >
+          ⚙️ الإعدادات
+        </button>
         <Link to="/dashboard/whatsapp-accounts" className="tab">
           {t('tabs.waAccounts')}
         </Link>
@@ -504,6 +994,9 @@ export default function MessagingDashboard() {
       )}
 
       {error && <div className="error">{error}</div>}
+      <div className="banner" style={{ marginTop: 10 }}>
+        {t('realtime.status')}: {socketConnected ? t('realtime.connected') : t('realtime.disconnected')}
+      </div>
 
       {view === 'leads' && (
         <>
@@ -627,10 +1120,135 @@ export default function MessagingDashboard() {
             <div className="thread-panel">
               <div className="thread-head">
                 <h3>{t('conversations.threadTitle')}</h3>
-                <button type="button" className="btn-close" onClick={closeConversation}>
-                  {t('common.close')}
-                </button>
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                  <button
+                    type="button"
+                    className="btn-delete"
+                    disabled={memoryClearing}
+                    onClick={() => void clearMemory()}
+                  >
+                    {memoryClearing ? t('memory.clearing') : t('memory.clear')}
+                  </button>
+                  <button type="button" className="btn-close" onClick={closeConversation}>
+                    {t('common.close')}
+                  </button>
+                </div>
               </div>
+
+              {(lastAgentJoined || typingStatus?.status === 'start') && (
+                <div className="banner" style={{ marginTop: 10 }}>
+                  {lastAgentJoined
+                    ? t('realtime.agentJoined', { name: lastAgentJoined.agentName })
+                    : null}
+                  {typingStatus?.status === 'start'
+                    ? ` ${t('realtime.typing')}`
+                    : null}
+                </div>
+              )}
+
+              <div className="table-wrap" style={{ marginTop: 10 }}>
+                <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+                  <strong>{t('memory.statsTitle')}</strong>
+                  <span>
+                    {t('memory.count')}: {memoryStats?.count ?? t('common.empty')}
+                  </span>
+                  <span>
+                    {t('memory.oldest')}: {memoryStats?.oldest ? formatDate(memoryStats.oldest, locale) : t('common.empty')}
+                  </span>
+                  <span>
+                    {t('memory.newest')}: {memoryStats?.newest ? formatDate(memoryStats.newest, locale) : t('common.empty')}
+                  </span>
+                  <button
+                    type="button"
+                    className="btn-edit"
+                    disabled={memoryLoading}
+                    onClick={() => void refreshMemoryStats()}
+                  >
+                    {memoryLoading ? t('loading.generic') : t('memory.refresh')}
+                  </button>
+                </div>
+
+                <div style={{ marginTop: 10 }}>
+                  <strong>{t('memory.searchTitle')}</strong>
+                  <div style={{ display: 'flex', gap: 8, marginTop: 6, flexWrap: 'wrap' }}>
+                    <input
+                      type="text"
+                      value={memoryQuery}
+                      onChange={(e) => setMemoryQuery(e.target.value)}
+                      placeholder={t('memory.searchPlaceholder')}
+                      style={{ flex: '1 1 240px' }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') void searchMemory();
+                      }}
+                    />
+                    <button
+                      type="button"
+                      className="btn-primary"
+                      disabled={memorySearching || !memoryQuery.trim()}
+                      onClick={() => void searchMemory()}
+                    >
+                      {memorySearching ? t('memory.searching') : t('memory.search')}
+                    </button>
+                  </div>
+
+                  {memoryResults.length > 0 && (
+                    <ul style={{ marginTop: 10, paddingInlineStart: 18 }}>
+                      {memoryResults.map((r) => (
+                        <li key={r.id} style={{ marginBottom: 6 }}>
+                          <span style={{ fontWeight: 600 }}>
+                            {r.role === 'user' ? t('conversations.user') : t('conversations.bot')}
+                          </span>
+                          {typeof r.similarity === 'number' ? (
+                            <span style={{ color: '#666' }}>
+                              {' '}
+                              ({t('memory.similarity')}: {r.similarity.toFixed(3)})
+                            </span>
+                          ) : null}
+                          <div style={{ whiteSpace: 'pre-wrap' }}>{r.messageText}</div>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              </div>
+
+              <div className="table-wrap" style={{ marginTop: 10 }}>
+                <strong>{t('realtime.agentTypingBoxTitle')}</strong>
+                <textarea
+                  rows={2}
+                  value={agentDraft}
+                  onChange={(e) => handleAgentDraftChange(e.target.value)}
+                  placeholder={t('realtime.agentTypingBoxPlaceholder')}
+                  style={{ width: '100%', marginTop: 6 }}
+                />
+              </div>
+
+              <div className="table-wrap" style={{ marginTop: 10 }}>
+                <strong>{t('products.recommendedForCustomer')}</strong>
+                {recsLoading ? (
+                  <div className="loading">{t('loading.generic')}</div>
+                ) : recommendations.length === 0 ? (
+                  <div style={{ color: '#666', marginTop: 6 }}>
+                    {t('products.noRecommendations')}
+                  </div>
+                ) : (
+                  <ul style={{ marginTop: 10, paddingInlineStart: 18 }}>
+                    {recommendations.map((r) => (
+                      <li key={r.productId} style={{ marginBottom: 8 }}>
+                        <div style={{ fontWeight: 600 }}>
+                          {r.name} — {Number(r.price).toLocaleString(locale)} EGP
+                        </div>
+                        <div style={{ color: '#666' }}>
+                          {t('products.recommendationReason')}: {r.reason} •{' '}
+                          {t('products.recommendationScore')}:{' '}
+                          {Number(r.score).toFixed(2)}
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+
               {msgLoading ? (
                 <div className="loading">{t('loading.messages')}</div>
               ) : (
@@ -762,6 +1380,7 @@ export default function MessagingDashboard() {
                   <tr>
                     <th>{t('products.name')}</th>
                     <th>{t('products.price')}</th>
+                    <th>{t('products.conversionRate')}</th>
                     <th>{t('products.image')}</th>
                     <th>{t('common.actions')}</th>
                   </tr>
@@ -769,7 +1388,7 @@ export default function MessagingDashboard() {
                 <tbody>
                   {products.length === 0 ? (
                     <tr>
-                      <td colSpan={4} style={{ textAlign: 'center', color: '#666' }}>
+                      <td colSpan={5} style={{ textAlign: 'center', color: '#666' }}>
                         {t('products.empty')}
                       </td>
                     </tr>
@@ -783,10 +1402,16 @@ export default function MessagingDashboard() {
                         Array.isArray(row.imageUrls) && row.imageUrls.length > 1
                           ? row.imageUrls.length - 1
                           : 0;
+                      const aff = productAffinity[row.id];
+                      const cr =
+                        typeof aff?.conversionRate === 'number'
+                          ? aff.conversionRate
+                          : null;
                       return (
                       <tr key={row.id}>
                         <td>{row.name}</td>
                         <td>{Number(row.price).toLocaleString(locale)}</td>
+                        <td>{cr == null ? dash : `${(cr * 100).toFixed(1)}%`}</td>
                         <td className="cell-thumb">
                           {primary ? (
                             <a
@@ -1133,6 +1758,471 @@ export default function MessagingDashboard() {
                 </form>
               </div>
             </div>
+          )}
+        </>
+      )}
+
+      {view === 'stats' && (
+        <>
+          <h2 style={{ marginBottom: '1rem' }}>📊 تقارير المبيعات</h2>
+
+          {statsLoading ? (
+            <div className="loading">جاري التحميل...</div>
+          ) : stats ? (
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))',
+                gap: '1rem',
+                marginBottom: '2rem',
+              }}
+            >
+              {[
+                { label: 'إجمالي المحادثات', value: stats.total ?? 0, color: '#6366f1' },
+                { label: 'عملاء جدد', value: stats.new ?? 0, color: '#64748b' },
+                { label: 'مهتمون', value: stats.interested ?? 0, color: '#f59e0b' },
+                { label: 'ساخنون 🔥', value: stats.hot ?? 0, color: '#ef4444' },
+                { label: 'محادثات النهارده', value: stats.today ?? 0, color: '#10b981' },
+              ].map((card) => (
+                <div
+                  key={card.label}
+                  style={{
+                    background: '#fff',
+                    border: '1px solid #e2e8f0',
+                    borderRadius: '12px',
+                    padding: '1.25rem',
+                    textAlign: 'center',
+                    boxShadow: '0 1px 3px rgba(0,0,0,0.06)',
+                  }}
+                >
+                  <div
+                    style={{
+                      fontSize: '2rem',
+                      fontWeight: 700,
+                      color: card.color,
+                    }}
+                  >
+                    {card.value}
+                  </div>
+                  <div style={{ fontSize: '0.85rem', color: '#64748b', marginTop: '0.25rem' }}>
+                    {card.label}
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p style={{ color: '#64748b' }}>لا توجد بيانات</p>
+          )}
+
+          {stats?.topProducts?.length > 0 && (
+            <div style={{ marginBottom: '2rem' }}>
+              <h3 style={{ marginBottom: '0.75rem' }}>🏆 أكتر المنتجات إثارةً للاهتمام</h3>
+              <div className="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>المنتج</th>
+                      <th>عدد المرات</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {stats.topProducts.map((p) => (
+                      <tr key={p.name}>
+                        <td>{p.name}</td>
+                        <td>{p.count}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          <div
+            style={{
+              background: '#fff',
+              border: '1px solid #e2e8f0',
+              borderRadius: '12px',
+              padding: '1.5rem',
+              boxShadow: '0 1px 3px rgba(0,0,0,0.06)',
+            }}
+          >
+            <h3 style={{ marginBottom: '1rem' }}>📢 إرسال رسالة جماعية</h3>
+            <form onSubmit={sendBroadcast}>
+              <div className="form-grid">
+                <label className="field field-wide">
+                  <span>الرسالة</span>
+                  <textarea
+                    rows={3}
+                    value={broadcastMsg}
+                    onChange={(e) => setBroadcastMsg(e.target.value)}
+                    placeholder="اكتب رسالتك هنا..."
+                    maxLength={1000}
+                    required
+                  />
+                </label>
+                <label className="field">
+                  <span>إرسال لـ</span>
+                  <select
+                    value={broadcastFilter}
+                    onChange={(e) => setBroadcastFilter(e.target.value)}
+                  >
+                    <option value="all">الكل</option>
+                    <option value="new">عملاء جدد</option>
+                    <option value="interested">المهتمون</option>
+                    <option value="hot">الساخنون 🔥</option>
+                  </select>
+                </label>
+              </div>
+              <button
+                type="submit"
+                className="btn-primary"
+                disabled={broadcasting}
+                style={{ marginTop: '1rem' }}
+              >
+                {broadcasting ? 'جاري الإرسال...' : '📤 إرسال'}
+              </button>
+            </form>
+
+            {broadcastResult && (
+              <div
+                style={{
+                  marginTop: '1rem',
+                  padding: '0.75rem 1rem',
+                  background: '#f0fdf4',
+                  border: '1px solid #86efac',
+                  borderRadius: '8px',
+                  color: '#166534',
+                }}
+              >
+                ✅ تم الإرسال — إجمالي: {broadcastResult.total} | تم: {broadcastResult.queued} | تخطي:{' '}
+                {broadcastResult.skipped}
+              </div>
+            )}
+          </div>
+        </>
+      )}
+
+      {view === 'orders' && (
+        <>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+            <h2>📦 الطلبات</h2>
+            <button className="btn-primary" onClick={loadOrders}>🔄 تحديث</button>
+          </div>
+
+          {ordersLoading ? (
+            <div className="loading">جاري التحميل...</div>
+          ) : orders.length === 0 ? (
+            <p style={{ color: '#64748b', textAlign: 'center', marginTop: '2rem' }}>لا توجد طلبات بعد</p>
+          ) : (
+            <div className="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>التاريخ</th>
+                    <th>الاسم</th>
+                    <th>التليفون</th>
+                    <th>العنوان</th>
+                    <th>الموقع</th>
+                    <th>المنتجات</th>
+                    <th>الإجمالي</th>
+                    <th>ملاحظات</th>
+                    <th>الحالة</th>
+                    <th>إجراءات</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {orders.map((order) => (
+                    <tr key={order.id}>
+                      <td style={{ whiteSpace: 'nowrap' }}>
+                        {new Date(order.createdAt).toLocaleString('ar')}
+                      </td>
+                      <td>{order.customerName}</td>
+                      <td>{order.customerPhone}</td>
+                      <td>{order.customerAddress}</td>
+                      <td>
+                        {order.locationUrl ? (
+                          <a href={order.locationUrl} target="_blank" rel="noreferrer">
+                            📍 خرائط
+                          </a>
+                        ) : '—'}
+                      </td>
+                      <td>
+                        <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
+                          {(Array.isArray(order.items) ? order.items : []).map((item, i) => (
+                            <li key={i} style={{ fontSize: '0.85rem' }}>
+                              {item.name} × {item.quantity} — {item.price * item.quantity} جنيه
+                            </li>
+                          ))}
+                        </ul>
+                      </td>
+                      <td style={{ fontWeight: 700, color: '#6366f1' }}>
+                        {order.total} جنيه
+                      </td>
+                      <td>{order.notes || '—'}</td>
+                      <td>
+                        <span style={{
+                          padding: '0.25rem 0.5rem',
+                          borderRadius: '6px',
+                          fontSize: '0.8rem',
+                          background: order.status === 'confirmed' ? '#dcfce7' : order.status === 'cancelled' ? '#fee2e2' : '#fef9c3',
+                          color: order.status === 'confirmed' ? '#166534' : order.status === 'cancelled' ? '#991b1b' : '#854d0e',
+                        }}>
+                          {order.status === 'confirmed' ? '✅ مؤكد' : order.status === 'cancelled' ? '❌ ملغي' : '⏳ جاري'}
+                        </span>
+                      </td>
+                      <td>
+                        <div style={{ display: 'flex', gap: '0.5rem' }}>
+                          <button
+                            className="btn-edit"
+                            onClick={() => updateOrderStatus(order.id, 'confirmed')}
+                          >
+                            ✅ تأكيد
+                          </button>
+                          <button
+                            className="btn-delete"
+                            onClick={() => updateOrderStatus(order.id, 'cancelled')}
+                          >
+                            ❌ إلغاء
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </>
+      )}
+
+      {view === 'settings' && (
+        <>
+          <div
+            style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              marginBottom: '1rem',
+            }}
+          >
+            <h2>⚙️ إعدادات المتجر</h2>
+            <button
+              className="btn-primary"
+              onClick={() => void loadSettings()}
+              disabled={settingsLoading || savingSettings}
+            >
+              🔄 تحديث
+            </button>
+          </div>
+
+          {settingsLoading ? (
+            <div className="loading">جاري التحميل...</div>
+          ) : (
+            <form className="product-form" onSubmit={saveSettings}>
+              <h3 className="form-title">بيانات المتجر</h3>
+              <div className="form-grid">
+                <label className="field field-wide">
+                  <span>اسم المتجر</span>
+                  <input
+                    type="text"
+                    value={settings.storeName}
+                    onChange={(e) =>
+                      setSettings((s) => ({ ...s, storeName: e.target.value }))
+                    }
+                    maxLength={200}
+                    required
+                  />
+                </label>
+
+                <label className="field field-wide">
+                  <span>Slug (رابط صفحة الشراء)</span>
+                  <input
+                    type="text"
+                    value={settings.slug}
+                    onChange={(e) =>
+                      setSettings((s) => ({ ...s, slug: e.target.value }))
+                    }
+                    placeholder="tenant-slug"
+                    maxLength={120}
+                  />
+                  <p className="field-hint">
+                    صفحة الشراء: <code>/shop.html?slug={settings.slug || 'tenant-slug'}</code>
+                  </p>
+                </label>
+
+                <label className="field field-wide">
+                  <span>رسالة الترحيب</span>
+                  <textarea
+                    rows={4}
+                    value={settings.welcomeMessage}
+                    onChange={(e) =>
+                      setSettings((s) => ({ ...s, welcomeMessage: e.target.value }))
+                    }
+                    maxLength={2000}
+                  />
+                </label>
+
+                <div className="field field-wide">
+                  <span>صور الترحيب</span>
+                  <label className="field field-wide" style={{ marginTop: '0.5rem' }}>
+                    <span style={{ fontSize: '0.9em', opacity: 0.9 }}>
+                      رفع صور متعددة (حتى 20)
+                    </span>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      multiple
+                      onChange={(ev) => void uploadWelcomeImages(ev)}
+                      disabled={
+                        savingSettings ||
+                        uploadingWelcomeImages ||
+                        settings.welcomeImages.length >= 20
+                      }
+                    />
+                  </label>
+                  {uploadingWelcomeImages ? (
+                    <p className="field-hint">جاري رفع الصور...</p>
+                  ) : null}
+                  {settings.welcomeImages.length > 0 ? (
+                    <div
+                      style={{
+                        display: 'flex',
+                        flexWrap: 'wrap',
+                        gap: '0.75rem',
+                        marginTop: '0.75rem',
+                      }}
+                    >
+                      {settings.welcomeImages.map((url, i) => (
+                        <div
+                          key={`${url}-${i}`}
+                          style={{
+                            position: 'relative',
+                            border: '1px solid var(--border, #333)',
+                            borderRadius: 8,
+                            overflow: 'hidden',
+                          }}
+                        >
+                          <img
+                            src={url}
+                            alt=""
+                            style={{
+                              width: 112,
+                              height: 112,
+                              objectFit: 'cover',
+                              display: 'block',
+                            }}
+                          />
+                          <button
+                            type="button"
+                            className="btn-delete"
+                            style={{
+                              position: 'absolute',
+                              top: 4,
+                              right: 4,
+                              padding: '2px 8px',
+                              fontSize: 12,
+                            }}
+                            onClick={() => removeWelcomeImage(i)}
+                          >
+                            ✕
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="field-hint">لا توجد صور بعد — ارفع من الزر أعلاه.</p>
+                  )}
+                </div>
+
+                <div className="field field-wide">
+                  <span>فيديوهات الترحيب</span>
+                  <label className="field field-wide" style={{ marginTop: '0.5rem' }}>
+                    <span style={{ fontSize: '0.9em', opacity: 0.9 }}>
+                      رفع فيديو واحد أو أكثر (حتى 10، الحد الأقصى ~16MB لكل ملف)
+                    </span>
+                    <input
+                      type="file"
+                      accept="video/*"
+                      multiple
+                      onChange={(ev) => void uploadWelcomeVideos(ev)}
+                      disabled={
+                        savingSettings ||
+                        uploadingWelcomeVideos ||
+                        settings.welcomeVideos.length >= 10
+                      }
+                    />
+                  </label>
+                  {uploadingWelcomeVideos ? (
+                    <p className="field-hint">جاري رفع الفيديو...</p>
+                  ) : null}
+                  {settings.welcomeVideos.length > 0 ? (
+                    <div
+                      style={{
+                        display: 'flex',
+                        flexWrap: 'wrap',
+                        gap: '0.75rem',
+                        marginTop: '0.75rem',
+                      }}
+                    >
+                      {settings.welcomeVideos.map((url, i) => (
+                        <div
+                          key={`${url}-${i}`}
+                          style={{
+                            border: '1px solid var(--border, #333)',
+                            borderRadius: 8,
+                            padding: 8,
+                            maxWidth: 220,
+                          }}
+                        >
+                          <video
+                            src={url}
+                            muted
+                            playsInline
+                            preload="metadata"
+                            style={{
+                              width: '100%',
+                              maxHeight: 120,
+                              borderRadius: 6,
+                              background: '#000',
+                            }}
+                          />
+                          <div
+                            style={{
+                              fontSize: 12,
+                              marginTop: 6,
+                              wordBreak: 'break-all',
+                              opacity: 0.85,
+                            }}
+                            title={url}
+                          >
+                            {basenameFromUrl(url)}
+                          </div>
+                          <button
+                            type="button"
+                            className="btn-delete"
+                            style={{ marginTop: 8, width: '100%' }}
+                            onClick={() => removeWelcomeVideo(i)}
+                          >
+                            حذف
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="field-hint">لا توجد فيديوهات بعد.</p>
+                  )}
+                </div>
+              </div>
+
+              <button
+                type="submit"
+                className="btn-primary"
+                disabled={savingSettings}
+              >
+                {savingSettings ? 'جاري الحفظ...' : '💾 حفظ'}
+              </button>
+            </form>
           )}
         </>
       )}

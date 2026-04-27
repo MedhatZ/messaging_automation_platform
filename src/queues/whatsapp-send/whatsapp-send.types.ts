@@ -4,6 +4,10 @@ export type WhatsappSendTextJobData = {
   whatsappAccountId: string;
   to: string;
   message: string;
+  followUp?: {
+    conversationId: string;
+    scheduledAt: string; // ISO string
+  };
 };
 
 export type WhatsappSendImageJobData = {
@@ -12,6 +16,32 @@ export type WhatsappSendImageJobData = {
   to: string;
   imageUrl: string;
   caption?: string;
+};
+
+export type WhatsappSendVideoJobData = {
+  tenantId: string;
+  whatsappAccountId: string;
+  to: string;
+  videoUrl: string;
+  caption?: string;
+};
+
+export type WhatsappSendProductListJobData = {
+  tenantId: string;
+  whatsappAccountId: string;
+  to: string;
+  catalogId: string;
+  headerText?: string;
+  bodyText?: string;
+  productRetailerIds: string[];
+};
+
+export type WhatsappSendInteractiveButtonsJobData = {
+  tenantId: string;
+  whatsappAccountId: string;
+  to: string;
+  bodyText: string;
+  buttons: { id: string; title: string }[];
 };
 
 /** Snapshot from BullMQ / Redis for observability and support tooling. */

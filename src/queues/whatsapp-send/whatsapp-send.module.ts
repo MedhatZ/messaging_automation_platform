@@ -9,23 +9,32 @@ import {
 import { WhatsappSendProcessor } from './whatsapp-send.processor';
 import { WhatsappSendProducer } from './whatsapp-send.producer';
 
+const queuesDisabled = process.env.QUEUES_DISABLED === 'true';
+
 @Module({
   imports: [
     WhatsappCryptoModule,
-    BullModule.registerQueue({
-      name: WHATSAPP_SEND_QUEUE,
-      defaultJobOptions: {
-        attempts: WHATSAPP_SEND_ATTEMPTS,
-        backoff: {
-          type: 'exponential',
-          delay: WHATSAPP_SEND_BACKOFF_MS,
-        },
-        removeOnComplete: { count: 5000 },
-        removeOnFail: { count: 10000 },
-      },
-    }),
+    ...(queuesDisabled
+      ? []
+      : [
+          BullModule.registerQueue({
+            name: WHATSAPP_SEND_QUEUE,
+            defaultJobOptions: {
+              attempts: WHATSAPP_SEND_ATTEMPTS,
+              backoff: {
+                type: 'exponential',
+                delay: WHATSAPP_SEND_BACKOFF_MS,
+              },
+              removeOnComplete: { count: 5000 },
+              removeOnFail: { count: 10000 },
+            },
+          }),
+        ]),
   ],
-  providers: [WhatsappSendProducer, WhatsappSendProcessor],
+  providers: [
+    WhatsappSendProducer,
+    ...(queuesDisabled ? [] : [WhatsappSendProcessor]),
+  ],
   exports: [WhatsappSendProducer],
 })
 export class WhatsappSendQueueModule {}

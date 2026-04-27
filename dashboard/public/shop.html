@@ -1,0 +1,660 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>المتجر</title>
+    <style>
+      :root {
+        --primary: #6366f1;
+        --primary-dark: #4f46e5;
+        --bg: #f8fafc;
+        --card: #ffffff;
+        --text: #0f172a;
+        --muted: #64748b;
+        --border: #e2e8f0;
+        --danger: #dc2626;
+        --success: #166534;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        font-family:
+          system-ui,
+          -apple-system,
+          BlinkMacSystemFont,
+          "Segoe UI",
+          sans-serif;
+        background: var(--bg);
+        color: var(--text);
+        line-height: 1.6;
+      }
+
+      button,
+      input,
+      select,
+      textarea {
+        font: inherit;
+      }
+
+      img {
+        max-width: 100%;
+        display: block;
+      }
+
+      .page {
+        max-width: 1180px;
+        margin: 0 auto;
+        padding: 20px 16px 160px;
+      }
+
+      .hero {
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: 20px;
+        padding: 24px;
+        margin-bottom: 20px;
+      }
+
+      .hero h1 {
+        margin: 0 0 8px;
+        font-size: clamp(1.8rem, 4vw, 3rem);
+        color: var(--primary);
+      }
+
+      .hero p {
+        margin: 0;
+        color: var(--muted);
+        font-size: 1.05rem;
+        white-space: pre-wrap;
+      }
+
+      .welcome-images {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+        gap: 12px;
+        margin-top: 18px;
+      }
+
+      .welcome-images img {
+        width: 100%;
+        height: 220px;
+        object-fit: contain;
+        background: #f1f5f9;
+        border: 1px solid var(--border);
+        border-radius: 14px;
+      }
+
+      .section-title {
+        margin: 22px 0 12px;
+        font-size: 1.35rem;
+      }
+
+      .products-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+        gap: 16px;
+      }
+
+      .product-card {
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: 18px;
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
+      }
+
+      .product-image {
+        width: 100%;
+        height: 230px;
+        object-fit: contain;
+        background: #f1f5f9;
+        border-bottom: 1px solid var(--border);
+      }
+
+      .product-body {
+        padding: 14px;
+        display: flex;
+        flex: 1;
+        flex-direction: column;
+        gap: 8px;
+      }
+
+      .product-name {
+        margin: 0;
+        font-size: 1.08rem;
+      }
+
+      .product-description {
+        margin: 0;
+        color: var(--muted);
+        font-size: 0.92rem;
+        min-height: 44px;
+      }
+
+      .product-footer {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        margin-top: auto;
+      }
+
+      .price {
+        color: var(--primary);
+        font-weight: 800;
+      }
+
+      .qty-row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+
+      .qty-row input {
+        width: 72px;
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        padding: 8px;
+      }
+
+      .btn {
+        border: 0;
+        border-radius: 12px;
+        padding: 10px 14px;
+        background: var(--primary);
+        color: #fff;
+        cursor: pointer;
+        font-weight: 700;
+      }
+
+      .btn:hover {
+        background: var(--primary-dark);
+      }
+
+      .btn-secondary {
+        background: #eef2ff;
+        color: var(--primary-dark);
+      }
+
+      .btn-secondary:hover {
+        background: #e0e7ff;
+      }
+
+      .btn-danger {
+        background: #fee2e2;
+        color: var(--danger);
+      }
+
+      .form-card,
+      .summary-card {
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: 18px;
+        padding: 18px;
+        margin-top: 18px;
+      }
+
+      .form-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 14px;
+      }
+
+      .field {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+      }
+
+      .field-wide {
+        grid-column: 1 / -1;
+      }
+
+      .field span {
+        color: var(--muted);
+        font-size: 0.92rem;
+      }
+
+      .field input,
+      .field select,
+      .field textarea {
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 11px 12px;
+        background: #fff;
+        color: var(--text);
+      }
+
+      .cart-bar {
+        position: fixed;
+        left: 50%;
+        bottom: 16px;
+        transform: translateX(-50%);
+        width: min(940px, calc(100% - 24px));
+        background: #111827;
+        color: #fff;
+        border-radius: 18px;
+        padding: 14px;
+        display: none;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        z-index: 20;
+      }
+
+      .cart-bar.visible {
+        display: flex;
+      }
+
+      .cart-items {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        max-height: 90px;
+        overflow: auto;
+        font-size: 0.9rem;
+      }
+
+      .cart-total {
+        font-weight: 800;
+        white-space: nowrap;
+      }
+
+      .state {
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: 16px;
+        padding: 24px;
+        text-align: center;
+        color: var(--muted);
+      }
+
+      .error {
+        color: var(--danger);
+      }
+
+      .success {
+        color: var(--success);
+      }
+
+      .hidden {
+        display: none !important;
+      }
+
+      @media (max-width: 700px) {
+        .page {
+          padding-inline: 12px;
+        }
+
+        .hero,
+        .form-card,
+        .summary-card {
+          border-radius: 14px;
+          padding: 16px;
+        }
+
+        .form-grid {
+          grid-template-columns: 1fr;
+        }
+
+        .product-footer {
+          align-items: stretch;
+          flex-direction: column;
+        }
+
+        .cart-bar {
+          align-items: stretch;
+          flex-direction: column;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="page">
+      <section id="loading" class="state">جاري تحميل المتجر...</section>
+      <section id="error" class="state error hidden"></section>
+
+      <section id="shop" class="hidden">
+        <header class="hero">
+          <h1 id="storeName">المتجر</h1>
+          <p id="welcomeMessage"></p>
+          <div id="welcomeImages" class="welcome-images"></div>
+        </header>
+
+        <h2 class="section-title">المنتجات</h2>
+        <div id="productsGrid" class="products-grid"></div>
+
+        <section class="form-card">
+          <h2 class="section-title" style="margin-top: 0">بيانات الطلب</h2>
+          <form id="orderForm">
+            <div class="form-grid">
+              <label class="field">
+                <span>الاسم الكامل *</span>
+                <input id="customerName" required maxlength="200" />
+              </label>
+              <label class="field">
+                <span>رقم التليفون *</span>
+                <input id="customerPhone" required maxlength="50" inputmode="tel" />
+              </label>
+              <label class="field">
+                <span>المحافظة</span>
+                <select id="governorate"></select>
+              </label>
+              <label class="field">
+                <span>رابط الموقع على خرائط جوجل</span>
+                <input id="locationUrl" type="url" placeholder="https://maps.google.com/..." />
+              </label>
+              <label class="field field-wide">
+                <span>العنوان بالتفصيل *</span>
+                <textarea id="addressDetails" rows="3" required maxlength="1000"></textarea>
+              </label>
+              <label class="field field-wide">
+                <span>ملاحظات</span>
+                <textarea id="notes" rows="3" maxlength="1000"></textarea>
+              </label>
+            </div>
+            <button class="btn" type="submit" style="margin-top: 14px">
+              تأكيد الطلب
+            </button>
+          </form>
+        </section>
+
+        <section id="orderSuccess" class="summary-card success hidden"></section>
+      </section>
+    </main>
+
+    <aside id="cartBar" class="cart-bar">
+      <div>
+        <strong>سلة الشراء</strong>
+        <div id="cartItems" class="cart-items"></div>
+      </div>
+      <div class="cart-total" id="cartTotal">0 جنيه</div>
+      <button class="btn btn-secondary" type="button" onclick="scrollToOrderForm()">
+        إتمام الطلب
+      </button>
+    </aside>
+
+    <script>
+      const EGYPT_GOVERNORATES = [
+        'القاهرة',
+        'الجيزة',
+        'الإسكندرية',
+        'الدقهلية',
+        'البحر الأحمر',
+        'البحيرة',
+        'الفيوم',
+        'الغربية',
+        'الإسماعيلية',
+        'المنوفية',
+        'المنيا',
+        'القليوبية',
+        'الوادي الجديد',
+        'السويس',
+        'أسوان',
+        'أسيوط',
+        'بني سويف',
+        'بورسعيد',
+        'دمياط',
+        'الشرقية',
+        'جنوب سيناء',
+        'كفر الشيخ',
+        'مطروح',
+        'الأقصر',
+        'قنا',
+        'شمال سيناء',
+        'سوهاج',
+      ];
+
+      const params = new URLSearchParams(window.location.search);
+      const slug = params.get('slug') || '';
+      const state = {
+        store: null,
+        cart: new Map(),
+        submitting: false,
+      };
+
+      const els = {
+        loading: document.getElementById('loading'),
+        error: document.getElementById('error'),
+        shop: document.getElementById('shop'),
+        storeName: document.getElementById('storeName'),
+        welcomeMessage: document.getElementById('welcomeMessage'),
+        welcomeImages: document.getElementById('welcomeImages'),
+        productsGrid: document.getElementById('productsGrid'),
+        cartBar: document.getElementById('cartBar'),
+        cartItems: document.getElementById('cartItems'),
+        cartTotal: document.getElementById('cartTotal'),
+        orderForm: document.getElementById('orderForm'),
+        orderSuccess: document.getElementById('orderSuccess'),
+        governorate: document.getElementById('governorate'),
+      };
+
+      function money(value) {
+        return `${Number(value || 0).toLocaleString('ar-EG')} جنيه`;
+      }
+
+      function showError(message) {
+        els.loading.classList.add('hidden');
+        els.shop.classList.add('hidden');
+        els.error.textContent = message;
+        els.error.classList.remove('hidden');
+      }
+
+      function setLoading(isLoading) {
+        els.loading.classList.toggle('hidden', !isLoading);
+      }
+
+      function populateGovernorates() {
+        els.governorate.innerHTML = EGYPT_GOVERNORATES.map(
+          (g) => `<option value="${g}">${g}</option>`,
+        ).join('');
+      }
+
+      function renderWelcomeImages(images) {
+        els.welcomeImages.innerHTML = '';
+        if (!Array.isArray(images) || images.length === 0) return;
+        for (const url of images) {
+          if (!url) continue;
+          const img = document.createElement('img');
+          img.src = url;
+          img.alt = '';
+          img.loading = 'lazy';
+          els.welcomeImages.appendChild(img);
+        }
+      }
+
+      function renderProducts(products) {
+        els.productsGrid.innerHTML = '';
+        if (!Array.isArray(products) || products.length === 0) {
+          els.productsGrid.innerHTML = '<div class="state">لا توجد منتجات حالياً</div>';
+          return;
+        }
+
+        for (const product of products) {
+          const card = document.createElement('article');
+          card.className = 'product-card';
+          const image = product.imageUrl || (product.imageUrls || [])[0] || '';
+          card.innerHTML = `
+            <img class="product-image" src="${image || ''}" alt="${escapeHtml(product.name)}" loading="lazy" />
+            <div class="product-body">
+              <h3 class="product-name">${escapeHtml(product.name)}</h3>
+              <p class="product-description">${escapeHtml(product.description || '')}</p>
+              <div class="product-footer">
+                <span class="price">${money(product.price)}</span>
+                <div class="qty-row">
+                  <input type="number" min="1" value="1" aria-label="الكمية" />
+                  <button class="btn" type="button">أضف للسلة</button>
+                </div>
+              </div>
+            </div>
+          `;
+          const qtyInput = card.querySelector('input');
+          const btn = card.querySelector('button');
+          btn.addEventListener('click', () => {
+            const quantity = Math.max(1, Math.floor(Number(qtyInput.value) || 1));
+            addToCart(product, quantity);
+          });
+          els.productsGrid.appendChild(card);
+        }
+      }
+
+      function escapeHtml(value) {
+        return String(value ?? '')
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;')
+          .replace(/"/g, '&quot;')
+          .replace(/'/g, '&#039;');
+      }
+
+      function addToCart(product, quantity) {
+        const existing = state.cart.get(product.id);
+        state.cart.set(product.id, {
+          productId: product.id,
+          name: product.name,
+          price: Number(product.price) || 0,
+          quantity: (existing?.quantity || 0) + quantity,
+        });
+        renderCart();
+      }
+
+      function removeFromCart(productId) {
+        state.cart.delete(productId);
+        renderCart();
+      }
+
+      function cartItems() {
+        return Array.from(state.cart.values());
+      }
+
+      function cartTotal() {
+        return cartItems().reduce((sum, item) => sum + item.price * item.quantity, 0);
+      }
+
+      function renderCart() {
+        const items = cartItems();
+        els.cartBar.classList.toggle('visible', items.length > 0);
+        els.cartItems.innerHTML = items
+          .map(
+            (item) => `
+              <div>
+                ${escapeHtml(item.name)} × ${item.quantity}
+                <button class="btn btn-danger" type="button" data-remove="${item.productId}" style="padding:2px 8px;margin-inline-start:6px">حذف</button>
+              </div>
+            `,
+          )
+          .join('');
+        els.cartTotal.textContent = money(cartTotal());
+        els.cartItems.querySelectorAll('[data-remove]').forEach((btn) => {
+          btn.addEventListener('click', () => removeFromCart(btn.dataset.remove));
+        });
+      }
+
+      function scrollToOrderForm() {
+        els.orderForm.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+
+      async function loadStore() {
+        if (!slug) {
+          showError('رابط المتجر غير صحيح. برجاء التأكد من وجود slug في الرابط.');
+          return;
+        }
+
+        setLoading(true);
+        try {
+          const res = await fetch(`/api/shop/${encodeURIComponent(slug)}`);
+          if (!res.ok) throw new Error('المتجر غير موجود');
+          const data = await res.json();
+          state.store = data;
+          els.storeName.textContent = data.storeName || 'المتجر';
+          document.title = data.storeName || 'المتجر';
+          els.welcomeMessage.textContent =
+            data.welcomeMessage || 'أهلاً بيك! اختار المنتجات اللي تناسبك وكمل طلبك بسهولة.';
+          renderWelcomeImages(data.welcomeImages);
+          renderProducts(data.products);
+          els.error.classList.add('hidden');
+          els.shop.classList.remove('hidden');
+        } catch (err) {
+          showError(err.message || 'حدث خطأ أثناء تحميل المتجر');
+        } finally {
+          setLoading(false);
+        }
+      }
+
+      els.orderForm.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        if (state.submitting) return;
+
+        const items = cartItems();
+        if (items.length === 0) {
+          alert('أضف منتج واحد على الأقل للسلة');
+          return;
+        }
+
+        const governorate = els.governorate.value;
+        const addressDetails = document.getElementById('addressDetails').value.trim();
+        const payload = {
+          customerName: document.getElementById('customerName').value.trim(),
+          customerPhone: document.getElementById('customerPhone').value.trim(),
+          customerAddress: `${governorate} - ${addressDetails}`,
+          locationUrl: document.getElementById('locationUrl').value.trim(),
+          notes: document.getElementById('notes').value.trim(),
+          items,
+          total: cartTotal(),
+        };
+
+        if (!payload.customerName || !payload.customerPhone || !addressDetails) {
+          alert('برجاء إدخال الاسم ورقم الهاتف والعنوان');
+          return;
+        }
+
+        state.submitting = true;
+        const submitBtn = els.orderForm.querySelector('button[type="submit"]');
+        submitBtn.disabled = true;
+        submitBtn.textContent = 'جاري تأكيد الطلب...';
+
+        try {
+          const res = await fetch(`/api/shop/${encodeURIComponent(slug)}/order`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+          });
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok) throw new Error(data.message || 'فشل تأكيد الطلب');
+
+          els.orderSuccess.classList.remove('hidden');
+          els.orderSuccess.innerHTML = `
+            <h2 style="margin-top:0">شكراً لطلبك!</h2>
+            <p>تم تسجيل طلبك بنجاح. رقم الطلب: <strong>${escapeHtml(data.orderId || '')}</strong></p>
+            <p><strong>الإجمالي:</strong> ${money(payload.total)}</p>
+            <ul>
+              ${items.map((item) => `<li>${escapeHtml(item.name)} × ${item.quantity}</li>`).join('')}
+            </ul>
+          `;
+          state.cart.clear();
+          renderCart();
+          els.orderForm.reset();
+          populateGovernorates();
+          els.orderSuccess.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        } catch (err) {
+          alert(err.message || 'فشل تأكيد الطلب');
+        } finally {
+          state.submitting = false;
+          submitBtn.disabled = false;
+          submitBtn.textContent = 'تأكيد الطلب';
+        }
+      });
+
+      populateGovernorates();
+      loadStore();
+    </script>
+  </body>
+</html>
+

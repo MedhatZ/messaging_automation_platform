@@ -33,6 +33,15 @@
     "generic": "Loading…",
     "messages": "Loading messages…"
   },
+  "realtime": {
+    "status": "Realtime",
+    "connected": "Connected",
+    "disconnected": "Disconnected",
+    "agentJoined": "Agent joined: {{name}}",
+    "typing": "Typing…",
+    "agentTypingBoxTitle": "Typing (realtime only)",
+    "agentTypingBoxPlaceholder": "Type here to emit typing events (not sent)…"
+  },
   "common": {
     "empty": "—",
     "close": "Close",
@@ -72,6 +81,21 @@
     "user": "User",
     "bot": "Bot"
   },
+  "memory": {
+    "statsTitle": "Semantic memory",
+    "count": "Saved",
+    "oldest": "Oldest",
+    "newest": "Newest",
+    "refresh": "Refresh",
+    "clear": "Clear Memory",
+    "clearing": "Clearing…",
+    "confirmClear": "Clear semantic memory for this conversation?",
+    "searchTitle": "Search in conversation memory",
+    "searchPlaceholder": "Type keywords…",
+    "search": "Search",
+    "searching": "Searching…",
+    "similarity": "similarity"
+  },
   "products": {
     "title": "Products",
     "addTitle": "Add product",
@@ -85,8 +109,13 @@
     "image": "Image",
     "keywordsPlaceholder": "Comma separated, e.g. shirt, cotton, blue",
     "add": "Add product",
+    "conversionRate": "Conversion rate",
     "empty": "No products yet.",
-    "confirmDelete": "Delete this product?"
+    "confirmDelete": "Delete this product?",
+    "recommendedForCustomer": "Recommended for this customer",
+    "noRecommendations": "No recommendations yet.",
+    "recommendationReason": "Reason",
+    "recommendationScore": "Score"
   },
   "admin": {
     "title": "Tenants",

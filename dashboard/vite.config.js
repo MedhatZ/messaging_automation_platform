@@ -6,40 +6,62 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
+      // Use IPv4 loopback to avoid ::1 issues on Windows
+      '/socket.io': {
+        target: 'http://127.0.0.1:3000',
+        changeOrigin: true,
+        ws: true,
+      },
       '/leads': {
-        target: 'http://localhost:3000',
+        target: 'http://127.0.0.1:3000',
         changeOrigin: true,
       },
       '/conversations': {
-        target: 'http://localhost:3000',
+        target: 'http://127.0.0.1:3000',
+        changeOrigin: true,
+      },
+      '/orders': {
+        target: 'http://127.0.0.1:3000',
         changeOrigin: true,
       },
       '/products': {
-        target: 'http://localhost:3000',
+        target: 'http://127.0.0.1:3000',
         changeOrigin: true,
       },
       '/faq': {
-        target: 'http://localhost:3000',
+        target: 'http://127.0.0.1:3000',
         changeOrigin: true,
       },
       '/admin': {
-        target: 'http://localhost:3000',
+        target: 'http://127.0.0.1:3000',
         changeOrigin: true,
       },
       '/auth': {
-        target: 'http://localhost:3000',
+        target: 'http://127.0.0.1:3000',
+        changeOrigin: true,
+      },
+      '/broadcast': {
+        target: 'http://127.0.0.1:3000',
+        changeOrigin: true,
+      },
+      '/tenants': {
+        target: 'http://127.0.0.1:3000',
+        changeOrigin: true,
+      },
+      '/api': {
+        target: 'http://127.0.0.1:3000',
         changeOrigin: true,
       },
       '/whatsapp-accounts': {
-        target: 'http://localhost:3000',
+        target: 'http://127.0.0.1:3000',
         changeOrigin: true,
       },
       '/upload': {
-        target: 'http://localhost:3000',
+        target: 'http://127.0.0.1:3000',
         changeOrigin: true,
       },
       '/uploads': {
-        target: 'http://localhost:3000',
+        target: 'http://127.0.0.1:3000',
         changeOrigin: true,
       },
     },

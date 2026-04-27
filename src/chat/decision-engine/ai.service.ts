@@ -6,6 +6,17 @@ import type { ProductCard } from './chat-decision.types';
 
 const TIMEOUT_FALLBACK_AR = 'هراجعلك التفاصيل وأرد عليك قريبًا';
 
+const SHOP_INTENT_KEYWORDS = [
+  'شراء',
+  'اطلب',
+  'اشتري',
+  'منتج',
+  'سعر',
+  'order',
+  'buy',
+  'shop',
+] as const;
+
 @Injectable()
 export class ChatAiDecisionService {
   constructor(
@@ -14,10 +25,10 @@ export class ChatAiDecisionService {
   ) {}
 
   promptTemplate(input: {
-    message: string;
     products: ProductCard[];
     faqs: { q: string; a: string }[];
     history: { role: 'user' | 'assistant'; content: string }[];
+    memory: { role: 'user' | 'assistant'; content: string }[];
   }): string {
     const productsText =
       input.products.length === 0
@@ -41,28 +52,48 @@ export class ChatAiDecisionService {
             .map((m) => `${m.role.toUpperCase()}: ${m.content}`)
             .join('\n') + '\n';
 
-    return `You are a sales assistant.
-Answer in Arabic.
-Be short and helpful.
-Use available products and FAQ when possible.
+    const memoryText =
+      input.memory.length === 0
+        ? '(no memory)\n'
+        : input.memory
+            .slice(0, 20)
+            .map((m) => `${m.role.toUpperCase()}: ${m.content}`)
+            .join('\n') + '\n';
 
-Rules:
-- Prefer FAQ answers if relevant.
-- Suggest products if the question relates.
-- Never hallucinate prices. Only use the exact prices provided in PRODUCTS.
-- If the user asks for something unknown, say you will check and respond later.
+    return `أنت مساعد مبيعات ذكي اسمك "كريم"، بتشتغل على واتساب لبيع منتجات.
 
-PRODUCTS (name | price):
+## شخصيتك:
+- بتتكلم بالعربي المصري الطبيعي، أسلوبك ودود وخفيف زي صاحب بيساعد.
+- بتستخدم إيموجي بشكل خفيف ومناسب.
+- ردودك قصيرة — جملتين أو تلاتة بالكتير.
+- مبتكررش كلام وما بتقولش جمل فاضية.
+
+## هدفك: إتمام البيع بدون أي تدخل بشري
+اتبع الخطوات دي حسب سياق المحادثة:
+1. رحب بشكل طبيعي واسأل العميل عن اللي يحتاجه.
+2. افهم احتياجه وقدم المنتج المناسب من القائمة بإيجاز مع أبرز ميزة.
+3. لو سأل سؤال، دور في الأسئلة الشائعة الأول وجاوب منها.
+4. لو في تردد، رد بثقة وبمعلومة حقيقية من البيانات اللي عندك.
+5. لما حسيت إن العميل مهتم، اسأله سؤال إغلاق مباشر زي: "تمام يسطا نكمل؟ 😊"
+
+## قواعد صارمة:
+- استخدم الأسعار من قائمة المنتجات فقط، لا تخترع أسعار أبداً.
+- لو السؤال مش في الأسئلة الشائعة ومش متعلق بالمنتجات، قول: "هسألهملك وأرد عليك بأسرع وقت 🙏"
+- لا تعرض منتجات مش في القائمة.
+- لا تقل "كمساعد ذكاء اصطناعي" أو أي كلام يكشف إنك بوت.
+
+## المنتجات المتاحة (الاسم | السعر):
 ${productsText}
 
-FAQS:
+## الأسئلة الشائعة:
 ${faqText}
 
-CONVERSATION HISTORY (last messages):
+## سجل المحادثة:
 ${historyText}
 
-USER MESSAGE:
-${input.message}`;
+## ذاكرة سابقة ذات صلة:
+${memoryText}
+`;
   }
 
   async ask(
@@ -73,63 +104,106 @@ ${input.message}`;
       products: ProductCard[];
       faqs: { q: string; a: string }[];
       history: { role: 'user' | 'assistant'; content: string }[];
+      memory: { role: 'user' | 'assistant'; content: string }[];
     },
   ): Promise<string> {
     const apiKey =
-      this.config.get<string>('openai.apiKey', { infer: true }) ?? '';
+      this.config.get<string>('anthropic.apiKey', { infer: true }) ?? '';
     if (!apiKey.trim()) {
       return TIMEOUT_FALLBACK_AR;
     }
 
-    const model =
-      this.config.get<string>('openai.model', { infer: true }) ?? 'gpt-4o-mini';
     const timeoutMs = Math.max(
       500,
-      Number(this.config.get<number>('openai.timeoutMs', { infer: true }) ?? 6000),
+      Number(
+        this.config.get<number>('anthropic.timeoutMs', { infer: true }) ?? 15000,
+      ),
     );
 
     const controller = new AbortController();
     const t = setTimeout(() => controller.abort(), timeoutMs);
 
     try {
-      const prompt = this.promptTemplate({
-        message,
+      const system = this.promptTemplate({
         products: context.products,
         faqs: context.faqs,
         history: context.history,
+        memory: context.memory,
       });
 
-      const res = await fetch('https://api.openai.com/v1/chat/completions', {
+      const res = await fetch('https://api.anthropic.com/v1/messages', {
         method: 'POST',
         signal: controller.signal,
         headers: {
-          Authorization: `Bearer ${apiKey.trim()}`,
-          'Content-Type': 'application/json',
+          'x-api-key': apiKey.trim(),
+          'anthropic-version': '2023-06-01',
+          'content-type': 'application/json',
         },
         body: JSON.stringify({
-          model,
-          temperature: 0.2,
-          messages: [
-            { role: 'system', content: 'Follow the instructions exactly.' },
-            { role: 'user', content: prompt },
-          ],
+          model: 'claude-haiku-4-5-20251001',
+          max_tokens: 1024,
+          system,
+          messages: [{ role: 'user', content: message }],
         }),
       });
 
       if (!res.ok) {
+        const err = await res.text();
+        // eslint-disable-next-line no-console
+        console.error('Anthropic error:', err);
         return TIMEOUT_FALLBACK_AR;
       }
 
       const data = (await res.json()) as {
-        choices?: { message?: { content?: string } }[];
+        content?: { type: string; text: string }[];
       };
-      const text = data?.choices?.[0]?.message?.content?.trim();
-      return text && text.length > 0 ? text : TIMEOUT_FALLBACK_AR;
+
+      const text = data?.content?.[0]?.text?.trim();
+      if (!text || text.length === 0) return TIMEOUT_FALLBACK_AR;
+
+      const withShopLink = await this.maybeAppendShopLink(text, context.tenantId);
+      return withShopLink;
     } catch {
       return TIMEOUT_FALLBACK_AR;
     } finally {
       clearTimeout(t);
     }
+  }
+
+  private async maybeAppendShopLink(
+    reply: string,
+    tenantId: string,
+  ): Promise<string> {
+    const normalized = reply.toLowerCase();
+    const hasShopIntent = SHOP_INTENT_KEYWORDS.some((k) =>
+      normalized.includes(k.toLowerCase()),
+    );
+    if (!hasShopIntent) return reply;
+
+    const appUrlRaw =
+      (process.env.APP_URL ?? '').trim() ||
+      (this.config.get<string>('APP_URL', { infer: true }) ?? '').trim();
+    if (!appUrlRaw) return reply;
+
+    const tenant = await this.prisma.tenant.findUnique({
+      where: { id: tenantId },
+      select: { slug: true },
+    });
+    const slug = String(tenant?.slug ?? '').trim();
+    if (!slug) return reply;
+
+    const base = appUrlRaw.replace(/\/+$/, '');
+    const shopUrl = `${base}/shop.html?slug=${encodeURIComponent(slug)}`;
+
+    if (
+      reply.includes(shopUrl) ||
+      reply.includes(`/shop/${slug}`) ||
+      reply.includes(`shop.html?slug=${slug}`)
+    ) {
+      return reply;
+    }
+
+    return `${reply}\n\n🛒 ${shopUrl}`;
   }
 }
 

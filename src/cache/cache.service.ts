@@ -16,6 +16,10 @@ export class CacheService implements OnModuleInit, OnModuleDestroy {
 
   constructor(private readonly config: ConfigService) {}
 
+  isEnabled(): boolean {
+    return Boolean(this.client);
+  }
+
   onModuleInit(): void {
     const url = this.config.get<string>('redis.url')?.trim();
     if (!url) {
@@ -91,6 +95,77 @@ export class CacheService implements OnModuleInit, OnModuleDestroy {
       this.logger.warn(
         `Cache del failed for key=${key}: ${err instanceof Error ? err.message : err}`,
       );
+    }
+  }
+
+  /**
+   * Best-effort pattern delete using SCAN + DEL. Returns number of deleted keys.
+   * Safe for production: avoids KEYS.
+   */
+  async deleteByPattern(pattern: string): Promise<number> {
+    const redis = this.client;
+    if (!redis) return 0;
+
+    let cursor = '0';
+    let deleted = 0;
+
+    try {
+      do {
+        const res = (await redis.scan(
+          cursor,
+          'MATCH',
+          pattern,
+          'COUNT',
+          '200',
+        )) as unknown as [string, string[]];
+        cursor = res?.[0] ?? '0';
+        const keys = Array.isArray(res?.[1]) ? res[1] : [];
+        if (keys.length > 0) {
+          // ioredis `del` accepts (...keys)
+          const n = await (redis as any).del(...keys);
+          deleted += Number(n) || 0;
+        }
+      } while (cursor !== '0');
+    } catch (err) {
+      this.logger.warn(
+        `Cache deleteByPattern failed for pattern=${pattern}: ${err instanceof Error ? err.message : err}`,
+      );
+      return deleted;
+    }
+
+    return deleted;
+  }
+
+  /**
+   * SET key value NX EX ttl. Returns true if lock acquired.
+   * Best-effort: returns false when Redis is unavailable/errors.
+   */
+  async setNx(key: string, value: string, ttlSeconds: number): Promise<boolean> {
+    if (!this.client) return false;
+    try {
+      const ok = await this.client.set(key, value, 'EX', ttlSeconds, 'NX');
+      return ok === 'OK';
+    } catch (err) {
+      this.logger.warn(
+        `Cache setNx failed for key=${key}: ${err instanceof Error ? err.message : err}`,
+      );
+      return false;
+    }
+  }
+
+  /**
+   * EXPIRE key ttlSeconds. Returns true if TTL updated.
+   */
+  async expire(key: string, ttlSeconds: number): Promise<boolean> {
+    if (!this.client) return false;
+    try {
+      const res = await this.client.expire(key, ttlSeconds);
+      return Number(res) > 0;
+    } catch (err) {
+      this.logger.warn(
+        `Cache expire failed for key=${key}: ${err instanceof Error ? err.message : err}`,
+      );
+      return false;
     }
   }
 

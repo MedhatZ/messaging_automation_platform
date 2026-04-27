@@ -33,6 +33,15 @@
     "generic": "جاري التحميل…",
     "messages": "جاري تحميل الرسائل…"
   },
+  "realtime": {
+    "status": "الوقت الحقيقي",
+    "connected": "متصل",
+    "disconnected": "غير متصل",
+    "agentJoined": "تم انضمام موظف: {{name}}",
+    "typing": "يكتب الآن…",
+    "agentTypingBoxTitle": "الكتابة (وقت حقيقي فقط)",
+    "agentTypingBoxPlaceholder": "اكتب هنا لإرسال إشارات الكتابة (لن يتم الإرسال)…"
+  },
   "common": {
     "empty": "—",
     "close": "إغلاق",
@@ -72,6 +81,21 @@
     "user": "المستخدم",
     "bot": "البوت"
   },
+  "memory": {
+    "statsTitle": "الذاكرة الدلالية",
+    "count": "عدد الرسائل",
+    "oldest": "الأقدم",
+    "newest": "الأحدث",
+    "refresh": "تحديث",
+    "clear": "مسح الذاكرة",
+    "clearing": "جاري المسح…",
+    "confirmClear": "هل تريد مسح الذاكرة الدلالية لهذه المحادثة؟",
+    "searchTitle": "بحث داخل ذاكرة المحادثة",
+    "searchPlaceholder": "اكتب كلمات للبحث…",
+    "search": "بحث",
+    "searching": "جاري البحث…",
+    "similarity": "التشابه"
+  },
   "products": {
     "title": "المنتجات",
     "addTitle": "إضافة منتج",
@@ -85,8 +109,13 @@
     "image": "الصورة",
     "keywordsPlaceholder": "مفصولة بفواصل، مثال: قميص، قطن، أزرق",
     "add": "إضافة منتج",
+    "conversionRate": "نسبة التحويل",
     "empty": "لا توجد منتجات بعد.",
-    "confirmDelete": "حذف هذا المنتج؟"
+    "confirmDelete": "حذف هذا المنتج؟",
+    "recommendedForCustomer": "توصيات لهذا العميل",
+    "noRecommendations": "لا توجد توصيات بعد.",
+    "recommendationReason": "السبب",
+    "recommendationScore": "الدرجة"
   },
   "admin": {
     "title": "المستأجرون",

@@ -77,6 +77,10 @@ class EnvironmentVariables {
   @Min(500)
   @Max(60_000)
   OPENAI_TIMEOUT_MS?: number;
+
+  @IsOptional()
+  @IsString()
+  WHATSAPP_CATALOG_ID?: string;
 }
 
 export function validateEnv(config: Record<string, unknown>) {

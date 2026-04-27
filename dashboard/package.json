@@ -14,7 +14,8 @@
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "react-i18next": "^17.0.4",
-    "react-router-dom": "^7.14.1"
+    "react-router-dom": "^7.14.1",
+    "socket.io-client": "^4.8.3"
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^4.3.4",

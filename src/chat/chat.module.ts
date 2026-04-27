@@ -7,9 +7,16 @@ import { ChatAiDecisionService } from './decision-engine/ai.service';
 import { ChatFaqDecisionService } from './decision-engine/faq.service';
 import { ChatOrderDecisionService } from './decision-engine/order.service';
 import { ChatProductDecisionService } from './decision-engine/product.service';
+import { ConversationMemoryService } from './services/conversation-memory.service';
+import { EmbeddingsService } from './services/embeddings.service';
+import { ProductsModule } from '../products/products.module';
+import { CollisionGuardService } from './services/collision-guard.service';
+import { FollowUpService } from './services/follow-up.service';
+import { WhatsappSendQueueModule } from '../queues/whatsapp-send/whatsapp-send.module';
+import { LeadClassifierService } from './services/lead-classifier.service';
 
 @Module({
-  imports: [AuthModule],
+  imports: [AuthModule, ProductsModule, WhatsappSendQueueModule],
   controllers: [ChatController],
   providers: [
     ChatEngineService,
@@ -17,8 +24,18 @@ import { ChatProductDecisionService } from './decision-engine/product.service';
     ChatProductDecisionService,
     ChatOrderDecisionService,
     ChatAiDecisionService,
+    EmbeddingsService,
+    ConversationMemoryService,
+    CollisionGuardService,
+    FollowUpService,
+    LeadClassifierService,
     ChatService,
   ],
-  exports: [ChatEngineService, ChatService],
+  exports: [
+    ChatEngineService,
+    ChatService,
+    ConversationMemoryService,
+    CollisionGuardService,
+  ],
 })
 export class ChatModule {}

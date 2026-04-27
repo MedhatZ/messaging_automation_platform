@@ -17,7 +17,7 @@ export default () => ({
   rateLimit: {
     /** Per-tenant Meta webhook message handling (fixed 60s window). */
     webhookPerMinute: parseInt(
-      process.env.RATE_LIMIT_WEBHOOK_PER_MINUTE ?? '200',
+      process.env.RATE_LIMIT_WEBHOOK_PER_MINUTE ?? '60',
       10,
     ),
     /** Per-tenant outbound WhatsApp jobs enqueued per minute. */
@@ -40,11 +40,13 @@ export default () => ({
      * If unset, /whatsapp-accounts/:id/test will return a clear error.
      */
     testTo: (process.env.WHATSAPP_TEST_TO ?? '').trim(),
+
+    /** Optional: Meta Commerce catalog id for product_list interactive messages. */
+    catalogId: (process.env.WHATSAPP_CATALOG_ID ?? '').trim(),
   },
-  openai: {
-    apiKey: (process.env.OPENAI_API_KEY ?? '').trim(),
-    model: (process.env.OPENAI_MODEL ?? 'gpt-4o-mini').trim(),
-    timeoutMs: parseInt(process.env.OPENAI_TIMEOUT_MS ?? '6000', 10),
+  anthropic: {
+    apiKey: process.env.ANTHROPIC_API_KEY ?? '',
+    timeoutMs: parseInt(process.env.ANTHROPIC_TIMEOUT_MS ?? '15000', 10),
   },
   jwt: {
     secret:

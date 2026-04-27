@@ -1,7 +1,6 @@
 import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import {
   ChannelType,
-  LeadStatus,
   MessageDirection,
   Prisma,
 } from '@prisma/client';
@@ -14,32 +13,13 @@ import type { DecisionResult } from './decision-engine/chat-decision.types';
 import { ChatFaqDecisionService } from './decision-engine/faq.service';
 import { ChatOrderDecisionService } from './decision-engine/order.service';
 import { ChatProductDecisionService } from './decision-engine/product.service';
-
-const PRICE_PER_SQM = 200;
-const DEFAULT_LEAD_INTEREST = 'زرع';
-
-/** Hard-coded bot copy; tenant `fallback_message` overrides when set. */
-const CHAT_MESSAGES = {
-  ar: {
-    areaPrompt: 'تحب نحسبلك السعر حسب المساحة؟ 👀',
-    metersQuestion: 'المساحة كام متر تقريبًا؟',
-    priceEstimate: (price: number) =>
-      `السعر التقريبي: ${price} جنيه 💰\nتحب تأكد الطلب؟`,
-    unclearMeters: 'مش فاهم المساحة، اكتب رقم بالمتر لو سمحت.',
-    orderConfirmed: 'تمام 👌 فريقنا هيتواصل معاك خلال دقائق',
-    defaultFallback: 'سيتم الرد عليك قريبًا',
-  },
-  en: {
-    areaPrompt: 'Would you like us to estimate the price by area? 👀',
-    metersQuestion: 'Roughly how many square meters?',
-    priceEstimate: (price: number) =>
-      `Approximate price: ${price} EGP 💰\nWould you like to confirm the order?`,
-    unclearMeters:
-      'I could not read the area. Please type a positive number in meters.',
-    orderConfirmed: 'Great 👌 Our team will reach out within minutes.',
-    defaultFallback: 'Someone will get back to you shortly.',
-  },
-} as const;
+import { ConversationMemoryService } from './services/conversation-memory.service';
+import { ProductTrackingService } from '../products/services/product-tracking.service';
+import { ConversationGateway } from '../gateways/conversation.gateway';
+import { FollowUpService } from './services/follow-up.service';
+import { LeadClassifierService } from './services/lead-classifier.service';
+import { CacheService } from '../cache/cache.service';
+import type { ProductCard } from './decision-engine/chat-decision.types';
 
 /** When tenant is blocked (inactive / expired subscription). */
 const TENANT_ACCESS = {
@@ -53,26 +33,6 @@ const TENANT_ACCESS = {
   },
 } as const;
 
-const SALES_IDLE = 'idle';
-const SALES_AWAIT_AREA = 'awaiting_area_consent';
-const SALES_AWAIT_METERS = 'awaiting_area_meters';
-const SALES_AWAIT_CONFIRM = 'awaiting_order_confirm';
-
-const YES_AR = [
-  'اه',
-  'آه',
-  'ايه',
-  'نعم',
-  'عايز',
-  'موافق',
-  'تمام',
-  'اوكي',
-  'أوكي',
-  'خلاص',
-];
-
-const YES_EN = ['yes', 'yeah', 'yep', 'ok', 'okay', 'sure', 'yup'];
-
 export type FindOrCreateConversationInput = {
   tenantId: string;
   channelType: ChannelType;
@@ -85,6 +45,7 @@ export type ProcessMessageInput = FindOrCreateConversationInput & {
 };
 
 export type ProcessMessageProductSummary = {
+  id: string;
   imageUrl: string;
   name: string;
   price: number;
@@ -103,55 +64,34 @@ export type ProcessMessageResult =
       reply: string;
     };
 
-type SalesState =
-  | { step: 'idle' }
-  | { step: 'awaiting_area_consent' }
-  | { step: 'awaiting_area_meters'; interest: string }
-  | {
-      step: 'awaiting_order_confirm';
-      meters: number;
-      price: number;
-      interest: string;
-    };
-
-type SalesFlowOutcome =
-  | { kind: 'continue_faq' }
-  | {
-      kind: 'respond';
-      reply: string;
-      next: SalesState;
-      saveLead?: boolean;
-    };
-
-type ConversationSalesRow = {
-  id: string;
-  salesStep: string;
-  tempData: Prisma.JsonValue | null;
-  language: string;
-};
-
 @Injectable()
 export class ChatService {
   private readonly logger = new Logger(ChatService.name);
 
   constructor(
     private readonly prisma: PrismaService,
+    private readonly cache: CacheService,
     private readonly chatEngine: ChatEngineService,
     private readonly faqDecision: ChatFaqDecisionService,
     private readonly productDecision: ChatProductDecisionService,
     private readonly orderDecision: ChatOrderDecisionService,
     private readonly aiDecision: ChatAiDecisionService,
+    private readonly memory: ConversationMemoryService,
+    private readonly productTracking: ProductTrackingService,
+    private readonly gateway: ConversationGateway,
+    private readonly followUp: FollowUpService,
+    private readonly leadClassifier: LeadClassifierService,
   ) {}
 
   async findOrCreateConversation(
     input: FindOrCreateConversationInput,
-  ): Promise<ConversationSalesRow> {
+  ): Promise<{ id: string; language: string }> {
     const existing = await this.prisma.conversation.findFirst({
       where: {
         tenantId: input.tenantId,
         externalUserId: input.externalUserId,
       },
-      select: { id: true, salesStep: true, tempData: true, language: true },
+      select: { id: true, language: true },
     });
     if (existing) {
       return existing;
@@ -164,7 +104,7 @@ export class ChatService {
           externalUserId: input.externalUserId,
           externalUserName: input.externalUserName,
         },
-        select: { id: true, salesStep: true, tempData: true, language: true },
+        select: { id: true, language: true },
       });
     } catch (e) {
       if (
@@ -234,54 +174,27 @@ export class ChatService {
       ? detectMessageLanguage(input.message)
       : this.coerceConversationLang(conversation.language);
 
-    const state = this.rowToSalesState(conversation);
-
-    if (state.step !== 'idle') {
-      const outcome = this.tryHandleSalesFlow(
-        input,
-        state,
-        resolvedLang,
+    // Save user message into semantic memory as early as possible (best-effort).
+    // This must always be tenant-scoped.
+    void this.memory
+      .saveMessage({
+        tenantId: input.tenantId,
+        conversationId: conversation.id,
+        role: 'user',
+        messageText: input.message,
+      })
+      .catch((e) =>
+        this.logger.warn(
+          `semantic memory save(user) failed: ${e instanceof Error ? e.message : String(e)}`,
+        ),
       );
-      if (outcome.kind === 'continue_faq') {
-        await this.prisma.conversation.update({
-          where: { id: conversation.id },
-          data: {
-            salesStep: SALES_IDLE,
-            tempData: Prisma.JsonNull,
-            ...(isFirstMessage && { language: resolvedLang }),
-          },
-        });
-      } else {
-        const { reply, next, saveLead } = outcome;
-        const now = new Date();
-        const salesPatch = this.salesStateToDb(next);
-        await this.prisma.$transaction(async (tx) => {
-          await this.saveIncomingMessage(tx, conversation.id, input.message);
-          if (saveLead) {
-            await tx.lead.create({
-              data: {
-                tenantId: input.tenantId,
-                name: input.externalUserName ?? null,
-                phone: input.externalUserId,
-                interest: DEFAULT_LEAD_INTEREST,
-                status: LeadStatus.NEW,
-              },
-            });
-          }
-          await this.saveOutgoingMessage(tx, conversation.id, reply);
-          await tx.conversation.update({
-            where: { id: conversation.id },
-            data: {
-              lastMessageAt: now,
-              salesStep: salesPatch.salesStep,
-              tempData: salesPatch.tempData,
-              ...(isFirstMessage && { language: resolvedLang }),
-            },
-          });
-        });
-        return { success: true, matched: false, reply };
-      }
-    }
+
+    const semanticContext = await this.memory.getRelevantContext({
+      tenantId: input.tenantId,
+      conversationId: conversation.id,
+      messageText: input.message,
+      take: 6,
+    });
 
     const decision = await this.handleIncomingMessage(input.message, {
       tenantId: input.tenantId,
@@ -289,9 +202,28 @@ export class ChatService {
       name: input.externalUserName,
       lang: resolvedLang,
       conversationId: conversation.id,
+      semanticContext,
     });
 
     this.logger.log(`branch=${decision.branch}`);
+
+    // تصنيف العميل بناءً على رسالته وعلى الـ branch
+    const classifiedStatusCandidate =
+      decision.branch === 'product'
+        ? 'interested'
+        : this.leadClassifier.classify(input.message) ?? undefined;
+
+    const classifiedStatus =
+      classifiedStatusCandidate === 'hot'
+        ? 'hot'
+        : classifiedStatusCandidate === 'interested'
+          ? await this.prisma.conversation
+              .findUnique({
+                where: { id: conversation.id },
+                select: { leadStatus: true },
+              })
+              .then((c) => (c?.leadStatus === 'hot' ? undefined : 'interested'))
+          : undefined;
 
     const now = new Date();
     await this.prisma.$transaction(async (tx) => {
@@ -302,20 +234,95 @@ export class ChatService {
         data: {
           lastMessageAt: now,
           ...(isFirstMessage && { language: resolvedLang }),
+          ...(classifiedStatus && { leadStatus: classifiedStatus }),
         },
       });
     });
 
+    // Schedule follow-up لو الـ branch مش order
+    if (decision.branch !== 'order') {
+      const waAccount = await this.prisma.whatsappAccount.findFirst({
+        where: { tenantId: input.tenantId, status: 'active' },
+        select: { id: true },
+      });
+
+      if (waAccount) {
+        void this.followUp
+          .scheduleFollowUp({
+            tenantId: input.tenantId,
+            conversationId: conversation.id,
+            externalUserId: input.externalUserId,
+            whatsappAccountId: waAccount.id,
+          })
+          .catch((e) =>
+            this.logger.warn(
+              `follow-up scheduling failed: ${e instanceof Error ? e.message : String(e)}`,
+            ),
+          );
+      }
+    }
+
+    this.gateway.emitNewMessage(conversation.id, {
+      direction: 'INCOMING',
+      content: input.message,
+      at: now.toISOString(),
+    });
+    this.gateway.emitNewMessage(conversation.id, {
+      direction: 'OUTGOING',
+      content: decision.reply,
+      at: now.toISOString(),
+    });
+    this.gateway.emitConversationUpdated(conversation.id, {
+      lastMessageAt: now.toISOString(),
+      ...(classifiedStatus && { leadStatus: classifiedStatus }),
+    });
+
+    void this.memory
+      .saveMessage({
+        tenantId: input.tenantId,
+        conversationId: conversation.id,
+        role: 'assistant',
+        messageText: decision.reply,
+      })
+      .catch((e) =>
+        this.logger.warn(
+          `semantic memory save(assistant) failed: ${e instanceof Error ? e.message : String(e)}`,
+        ),
+      );
+
     const products =
-      decision.branch === 'product' && decision.products
+      (decision.branch === 'product' || decision.branch === 'ai') &&
+      decision.products
         ? decision.products
             .filter((p) => p.imageUrl && p.imageUrl.trim())
             .map((p) => ({
+              id: p.id,
               imageUrl: p.imageUrl!.trim(),
               name: p.name,
               price: p.price,
             }))
         : undefined;
+
+    if (
+      (decision.branch === 'product' || decision.branch === 'ai') &&
+      decision.products?.length
+    ) {
+      for (const p of decision.products) {
+        void this.productTracking
+          .trackProductView({
+            tenantId: input.tenantId,
+            conversationId: conversation.id,
+            productId: p.id,
+            viewDuration: 0,
+            mentionedInChat: true,
+          })
+          .catch((e) =>
+            this.logger.warn(
+              `product tracking failed: ${e instanceof Error ? e.message : String(e)}`,
+            ),
+          );
+      }
+    }
 
     return {
       success: true,
@@ -366,140 +373,6 @@ export class ChatService {
     return null;
   }
 
-  private rowToSalesState(row: ConversationSalesRow): SalesState {
-    switch (row.salesStep) {
-      case SALES_AWAIT_AREA:
-        return { step: 'awaiting_area_consent' };
-      case SALES_AWAIT_METERS: {
-        const d = (row.tempData as Record<string, unknown> | null) ?? {};
-        const interest =
-          typeof d.interest === 'string' ? d.interest : DEFAULT_LEAD_INTEREST;
-        return { step: 'awaiting_area_meters', interest };
-      }
-      case SALES_AWAIT_CONFIRM: {
-        const d = (row.tempData as Record<string, unknown> | null) ?? {};
-        const meters = Number(d.meters);
-        const price = Number(d.price);
-        const interest =
-          typeof d.interest === 'string' ? d.interest : DEFAULT_LEAD_INTEREST;
-        return {
-          step: 'awaiting_order_confirm',
-          meters: Number.isFinite(meters) ? meters : 0,
-          price: Number.isFinite(price) ? price : 0,
-          interest,
-        };
-      }
-      default:
-        return { step: 'idle' };
-    }
-  }
-
-  private salesStateToDb(next: SalesState): {
-    salesStep: string;
-    tempData: Prisma.InputJsonValue | typeof Prisma.JsonNull;
-  } {
-    switch (next.step) {
-      case 'idle':
-        return { salesStep: SALES_IDLE, tempData: Prisma.JsonNull };
-      case 'awaiting_area_consent':
-        return { salesStep: SALES_AWAIT_AREA, tempData: Prisma.JsonNull };
-      case 'awaiting_area_meters':
-        return {
-          salesStep: SALES_AWAIT_METERS,
-          tempData: { interest: next.interest },
-        };
-      case 'awaiting_order_confirm':
-        return {
-          salesStep: SALES_AWAIT_CONFIRM,
-          tempData: {
-            meters: next.meters,
-            price: next.price,
-            interest: next.interest,
-          },
-        };
-    }
-  }
-
-  private tryHandleSalesFlow(
-    input: ProcessMessageInput,
-    state: SalesState,
-    lang: ChatLang,
-  ): SalesFlowOutcome {
-    const norm = this.normalizeForYes(input.message, lang);
-
-    switch (state.step) {
-      case 'awaiting_area_consent':
-        if (this.matchesYes(norm, lang)) {
-          return {
-            kind: 'respond',
-            reply: CHAT_MESSAGES[lang].metersQuestion,
-            next: {
-              step: 'awaiting_area_meters',
-              interest: DEFAULT_LEAD_INTEREST,
-            },
-          };
-        }
-        return { kind: 'continue_faq' };
-
-      case 'awaiting_area_meters': {
-        const meters = this.extractFirstNumber(input.message);
-        if (meters != null) {
-          const price = Math.round(meters * PRICE_PER_SQM);
-          return {
-            kind: 'respond',
-            reply: CHAT_MESSAGES[lang].priceEstimate(price),
-            next: {
-              step: 'awaiting_order_confirm',
-              meters,
-              price,
-              interest: state.interest,
-            },
-          };
-        }
-        return {
-          kind: 'respond',
-          reply: CHAT_MESSAGES[lang].unclearMeters,
-          next: state,
-        };
-      }
-
-      case 'awaiting_order_confirm':
-        if (this.matchesYes(norm, lang)) {
-          return {
-            kind: 'respond',
-            reply: CHAT_MESSAGES[lang].orderConfirmed,
-            next: { step: 'idle' },
-            saveLead: true,
-          };
-        }
-        return { kind: 'continue_faq' };
-
-      default:
-        return { kind: 'continue_faq' };
-    }
-  }
-
-  /** Same idea as FAQ keyword step: English lowercased, Arabic as-is (trimmed). */
-  private normalizeForYes(text: string, lang: ChatLang): string {
-    const collapsed = text.trim().replace(/\s+/g, ' ');
-    return lang === 'en' ? collapsed.toLowerCase() : collapsed;
-  }
-
-  private matchesYes(normalized: string, lang: ChatLang): boolean {
-    const lower = normalized.toLowerCase();
-    const arHit = YES_AR.some((w) => normalized.includes(w));
-    const enHit = YES_EN.some((w) => lower.includes(w));
-    return lang === 'ar' ? arHit || enHit : enHit || arHit;
-  }
-
-  private extractFirstNumber(text: string): number | null {
-    const normalized = text.replace(/,/g, '.');
-    const m = normalized.match(/(\d+(?:\.\d+)?)/);
-    if (!m) return null;
-    const n = parseFloat(m[1]);
-    return Number.isFinite(n) && n > 0 ? n : null;
-  }
-
   /** Tokenize like the FAQ keyword step so product `hasSome` uses the same word list. */
   private tokenizeForKeywords(message: string, lang: ChatLang): string[] {
     const collapsed = message.trim().replace(/\s+/g, ' ');
@@ -526,14 +399,14 @@ export class ChatService {
       },
       orderBy: { createdAt: 'desc' },
       take: 8,
-      select: { imageUrls: true, name: true, price: true },
+      select: { id: true, imageUrls: true, name: true, price: true },
     });
 
     const out: ProcessMessageProductSummary[] = [];
     for (const p of rows) {
       const url = p.imageUrls?.[0]?.trim();
       if (!url) continue;
-      out.push({ imageUrl: url, name: p.name, price: p.price });
+      out.push({ id: p.id, imageUrl: url, name: p.name, price: p.price });
       if (out.length >= 2) break;
     }
 
@@ -552,20 +425,31 @@ export class ChatService {
       name?: string;
       lang: ChatLang;
       conversationId: string;
+      semanticContext: { role: 'user' | 'assistant'; content: string }[];
     },
   ): Promise<DecisionResult> {
     const raw = (message ?? '').toString();
     const normalized = raw.trim().replace(/\s+/g, ' ');
+
+    // Fetch products ONCE per request (cached in Redis per tenant).
+    const products = await this.fetchTopProductsCached(context.tenantId);
+
     if (!normalized) {
+      const aiReply = await this.aiDecision.ask(normalized, {
+        tenantId: context.tenantId,
+        lang: context.lang,
+        products,
+        faqs: await this.fetchFaqContext(context.tenantId, context.lang),
+        history: await this.fetchConversationHistory(context.conversationId),
+        memory: context.semanticContext,
+      });
+
+      const mentionedProducts = products.filter((p) => aiReply.includes(p.name));
+
       return {
         branch: 'ai',
-        reply: await this.aiDecision.ask(normalized, {
-          tenantId: context.tenantId,
-          lang: context.lang,
-          products: await this.productDecision.fetchTopProducts(context.tenantId),
-          faqs: await this.fetchFaqContext(context.tenantId, context.lang),
-          history: await this.fetchConversationHistory(context.conversationId),
-        }),
+        reply: aiReply,
+        products: mentionedProducts.length > 0 ? mentionedProducts : undefined,
       };
     }
 
@@ -589,29 +473,65 @@ export class ChatService {
     }
 
     if (this.productDecision.isProductIntent(normalized)) {
-      const products = await this.productDecision.fetchTopProducts(
-        context.tenantId,
-      );
       if (!products || products.length === 0) {
         return { branch: 'product', reply: 'حاليًا مفيش منتجات متاحة' };
       }
       return {
         branch: 'product',
-        reply: 'دي بعض المنتجات عندنا 👇',
+        reply: 'بالتأكيد! دي أحسن منتجاتنا ليك 👇 😊',
         products,
       };
     }
 
+    const aiReply = await this.aiDecision.ask(normalized, {
+      tenantId: context.tenantId,
+      lang: context.lang,
+      products,
+      faqs: await this.fetchFaqContext(context.tenantId, context.lang),
+      history: await this.fetchConversationHistory(context.conversationId),
+      memory: context.semanticContext,
+    });
+
+    const mentionedProducts = products.filter((p) => aiReply.includes(p.name));
+
     return {
       branch: 'ai',
-      reply: await this.aiDecision.ask(normalized, {
-        tenantId: context.tenantId,
-        lang: context.lang,
-        products: await this.productDecision.fetchTopProducts(context.tenantId),
-        faqs: await this.fetchFaqContext(context.tenantId, context.lang),
-        history: await this.fetchConversationHistory(context.conversationId),
-      }),
+      reply: aiReply,
+      products: mentionedProducts.length > 0 ? mentionedProducts : undefined,
     };
+  }
+
+  private async fetchTopProductsCached(tenantId: string): Promise<ProductCard[]> {
+    const cacheKey = `products:${tenantId}`;
+    const cached = await this.cache.get(cacheKey);
+
+    if (cached) {
+      try {
+        const parsed = JSON.parse(cached) as unknown;
+        if (Array.isArray(parsed)) {
+          return parsed as ProductCard[];
+        }
+      } catch {
+        // ignore cache parse errors; fallback to DB
+      }
+    }
+
+    const rows = await this.prisma.product.findMany({
+      where: { tenantId, isActive: true },
+      orderBy: { createdAt: 'desc' },
+      take: 5,
+      select: { id: true, name: true, price: true, imageUrls: true },
+    });
+
+    const products: ProductCard[] = rows.map((p) => ({
+      id: p.id,
+      name: p.name,
+      price: p.price,
+      imageUrl: Array.isArray(p.imageUrls) ? p.imageUrls[0]?.trim() : undefined,
+    }));
+
+    await this.cache.set(cacheKey, JSON.stringify(products), 300);
+    return products;
   }
 
   private async fetchConversationHistory(
@@ -620,7 +540,7 @@ export class ChatService {
     const rows = await this.prisma.message.findMany({
       where: { conversationId },
       orderBy: { createdAt: 'desc' },
-      take: 3,
+      take: 10,
       select: { direction: true, content: true },
     });
 

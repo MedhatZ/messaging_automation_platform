@@ -35,6 +35,7 @@ model Tenant {
   updatedAt DateTime @updatedAt @map("updated_at")
 
   name             String?
+  slug             String?  @unique
   email            String?
   isActive         Boolean   @default(true) @map("is_active")
   subscriptionEnd DateTime? @map("subscription_end")
@@ -43,7 +44,12 @@ model Tenant {
   products      Product[]
   faqs          Faq[]
   conversations Conversation[]
+  memories      ConversationMemory[]
+  productViews  ProductView[]
+  productRecommendations ProductRecommendation[]
+  productAffinities ProductAffinity[]
   leads         Lead[]
+  orders        Order[]
   botSettings        BotSettings?
   whatsappAccounts   WhatsappAccount[]
 
@@ -103,6 +109,9 @@ model Product {
   keywords    String[] @default([])
   isActive    Boolean  @default(true) @map("is_active")
 
+  views      ProductView[]
+  affinities ProductAffinity[]
+
   @@index([tenantId, isActive])
   @@map("products")
 }
@@ -141,6 +150,8 @@ model Lead {
   interest String?
   status   LeadStatus @default(NEW)
   lastMessage String? @map("last_message")
+  orderStep   String? @map("order_step")
+  orderPhone  String? @map("order_phone")
   size        String? @map("size")
   location    String? @map("location")
 
@@ -163,6 +174,8 @@ model Conversation {
   externalUserId   String    @map("external_user_id")
   externalUserName String?   @map("external_user_name")
   lastMessageAt    DateTime? @map("last_message_at")
+  lastFollowUpAt   DateTime? @map("last_follow_up_at")
+  leadStatus       String    @default("new") @map("lead_status")
 
   salesStep String @default("idle") @map("sales_step")
   tempData  Json?  @map("temp_data")
@@ -171,6 +184,9 @@ model Conversation {
   language String @default("ar")
 
   messages Message[]
+  memories ConversationMemory[]
+  productViews ProductView[]
+  productRecommendations ProductRecommendation[]
 
   @@index([tenantId, externalUserId])
   @@map("conversations")
@@ -202,6 +218,132 @@ model BotSettings {
 
   aiEnabled       Boolean @default(false) @map("ai_enabled")
   fallbackMessage String  @default("سيتم الرد عليك قريبًا") @map("fallback_message")
+  welcomeMessage  String? @map("welcome_message")
+  welcomeImages   String[] @default([]) @map("welcome_images")
+  welcomeVideos   String[] @default([]) @map("welcome_videos")
 
   @@map("bot_settings")
+}
+
+model ConversationMemory {
+  id             String @id @default(uuid()) @db.Uuid
+
+  tenantId String @map("tenant_id") @db.Uuid
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  conversationId String       @map("conversation_id") @db.Uuid
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  messageText String @map("message_text") @db.Text
+  embedding   Json?  @map("embedding")
+  role        String @map("role")
+  timestamp   DateTime @default(now()) @map("timestamp")
+
+  @@unique([conversationId, timestamp])
+  @@index([tenantId])
+  @@index([conversationId])
+  @@index([timestamp])
+  @@map("conversation_memories")
+}
+
+model ProductView {
+  id String @id @default(uuid()) @db.Uuid
+
+  tenantId String @map("tenant_id") @db.Uuid
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  conversationId String       @map("conversation_id") @db.Uuid
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  productId String  @map("product_id") @db.Uuid
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  viewDuration    Int     @map("view_duration")
+  mentionedInChat Boolean @default(true) @map("mentioned_in_chat")
+  orderPlaced     Boolean @default(false) @map("order_placed")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@unique([conversationId, productId])
+  @@index([tenantId])
+  @@index([productId])
+  @@index([createdAt])
+  @@map("product_views")
+}
+
+model ProductRecommendation {
+  id String @id @default(uuid()) @db.Uuid
+
+  tenantId String @map("tenant_id") @db.Uuid
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  conversationId String       @map("conversation_id") @db.Uuid
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  recommendedProducts Json @map("recommended_products")
+  clickedProductId    String? @map("clicked_product_id") @db.Uuid
+  clickedAt           DateTime? @map("clicked_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([tenantId])
+  @@index([conversationId])
+  @@index([createdAt])
+  @@map("product_recommendations")
+}
+
+model ProductAffinity {
+  id String @id @default(uuid()) @db.Uuid
+
+  tenantId String @map("tenant_id") @db.Uuid
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  productId String  @map("product_id") @db.Uuid
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  associatedKeywords String[] @map("associated_keywords")
+
+  totalMentions  Int   @default(0) @map("total_mentions")
+  totalOrders    Int   @default(0) @map("total_orders")
+  conversionRate Float @default(0) @map("conversion_rate")
+
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@unique([tenantId, productId])
+  @@index([tenantId])
+  @@index([conversionRate])
+  @@map("product_affinities")
+}
+
+model Order {
+  id        String   @id @default(uuid()) @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  tenantId String @map("tenant_id") @db.Uuid
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  // بيانات العميل
+  customerName    String  @map("customer_name")
+  customerPhone   String  @map("customer_phone")
+  customerAddress String  @map("customer_address")
+  locationUrl     String? @map("location_url")
+  notes           String? @map("notes")
+
+  // المنتجات (JSON array)
+  // [{ productId, name, price, quantity }]
+  items     Json    @default("[]")
+  total     Float   @default(0)
+
+  // الحالة
+  status    String  @default("pending")
+  // pending / confirmed / cancelled / delivered
+
+  // مصدر الطلب
+  sourcePhone String? @map("source_phone")
+
+  @@index([tenantId])
+  @@index([tenantId, status])
+  @@index([createdAt])
+  @@map("orders")
 }

@@ -29,7 +29,7 @@ export class TenantRateLimitService {
       kind === 'webhook'
         ? this.config.get<number>('rateLimit.webhookPerMinute', {
             infer: true,
-          }) ?? 200
+          }) ?? 60
         : this.config.get<number>('rateLimit.outboundPerMinute', {
             infer: true,
           }) ?? 300;

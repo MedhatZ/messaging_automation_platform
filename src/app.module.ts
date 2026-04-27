@@ -20,25 +20,34 @@ import { ProductsModule } from './products/products.module';
 import { TenantsModule } from './tenants/tenants.module';
 import { UploadModule } from './upload/upload.module';
 import { WhatsappAccountsModule } from './whatsapp-accounts/whatsapp-accounts.module';
+import { BroadcastModule } from './broadcast/broadcast.module';
+import { ShopModule } from './shop/shop.module';
+import { OrdersModule } from './orders/orders.module';
+
+const queuesDisabled = process.env.QUEUES_DISABLED === 'true';
 
 @Module({
   imports: [
     AppConfigModule,
-    BullModule.forRootAsync({
-      imports: [ConfigModule],
-      useFactory: (config: ConfigService) => {
-        const url = config.get<string>('redis.url')?.trim();
-        if (!url) {
-          throw new Error(
-            'REDIS_URL is required for BullMQ (WhatsApp outbound queue).',
-          );
-        }
-        return {
-          connection: { url },
-        };
-      },
-      inject: [ConfigService],
-    }),
+    ...(queuesDisabled
+      ? []
+      : [
+          BullModule.forRootAsync({
+            imports: [ConfigModule],
+            useFactory: (config: ConfigService) => {
+              const url = config.get<string>('redis.url')?.trim();
+              if (!url) {
+                throw new Error(
+                  'REDIS_URL is required for BullMQ (WhatsApp outbound queue).',
+                );
+              }
+              return {
+                connection: { url },
+              };
+            },
+            inject: [ConfigService],
+          }),
+        ]),
     CacheModule,
     InfraModule,
     CoreModule,
@@ -55,6 +64,9 @@ import { WhatsappAccountsModule } from './whatsapp-accounts/whatsapp-accounts.mo
     LeadsModule,
     ConversationsModule,
     WhatsappAccountsModule,
+    BroadcastModule,
+    ShopModule,
+    OrdersModule,
   ],
   controllers: [AppController],
   providers: [AppService],

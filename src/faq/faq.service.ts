@@ -4,17 +4,21 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import { CacheService } from '../cache/cache.service';
 import { PrismaService } from '../database/prisma.service';
 import { CreateFaqDto } from './dto/create-faq.dto';
 import { UpdateFaqDto } from './dto/update-faq.dto';
 
 @Injectable()
 export class FaqService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly cache: CacheService,
+  ) {}
 
   async create(dto: CreateFaqDto, tenantId: string) {
     try {
-      return await this.prisma.faq.create({
+      const created = await this.prisma.faq.create({
         data: {
           tenantId,
           questionAr: dto.questionAr,
@@ -27,6 +31,8 @@ export class FaqService {
           priority: dto.priority ?? 0,
         },
       });
+      await this.cache.del(`faqs:${tenantId}`);
+      return created;
     } catch (e) {
       if (
         e instanceof Prisma.PrismaClientKnownRequestError &&
@@ -69,10 +75,12 @@ export class FaqService {
       throw new BadRequestException('No fields to update');
     }
     try {
-      return await this.prisma.faq.update({
+      const updated = await this.prisma.faq.update({
         where: { id },
         data,
       });
+      await this.cache.del(`faqs:${tenantId}`);
+      return updated;
     } catch (e) {
       if (
         e instanceof Prisma.PrismaClientKnownRequestError &&
@@ -87,6 +95,7 @@ export class FaqService {
   async remove(id: string, tenantId: string) {
     await this.ensureExists(id, tenantId);
     await this.prisma.faq.delete({ where: { id } });
+    await this.cache.del(`faqs:${tenantId}`);
     return { id, deleted: true };
   }
 

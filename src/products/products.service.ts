@@ -4,17 +4,21 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import { CacheService } from '../cache/cache.service';
 import { PrismaService } from '../database/prisma.service';
 import { CreateProductDto } from './dto/create-product.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
 
 @Injectable()
 export class ProductsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly cache: CacheService,
+  ) {}
 
   async create(dto: CreateProductDto, tenantId: string) {
     try {
-      return await this.prisma.product.create({
+      const created = await this.prisma.product.create({
         data: {
           tenantId,
           name: dto.name,
@@ -25,6 +29,8 @@ export class ProductsService {
           isActive: dto.isActive ?? true,
         },
       });
+      await this.cache.del(`products:${tenantId}`);
+      return created;
     } catch (e) {
       if (
         e instanceof Prisma.PrismaClientKnownRequestError &&
@@ -67,10 +73,12 @@ export class ProductsService {
       throw new BadRequestException('No fields to update');
     }
     try {
-      return await this.prisma.product.update({
+      const updated = await this.prisma.product.update({
         where: { id },
         data,
       });
+      await this.cache.del(`products:${tenantId}`);
+      return updated;
     } catch (e) {
       if (
         e instanceof Prisma.PrismaClientKnownRequestError &&
@@ -85,6 +93,7 @@ export class ProductsService {
   async remove(id: string, tenantId: string) {
     await this.ensureExists(id, tenantId);
     await this.prisma.product.delete({ where: { id } });
+    await this.cache.del(`products:${tenantId}`);
     return { id, deleted: true };
   }
 

@@ -3,7 +3,48 @@ import { PrismaService } from '../../database/prisma.service';
 import { normalizeArabic } from '../../common/normalize-arabic';
 import type { ProductCard } from './chat-decision.types';
 
-const PRODUCT_INTENT = ['منتجات', 'صور', 'show products', 'catalog', 'items'];
+const PRODUCT_INTENT = [
+  // عربي — طلب مشاهدة
+  'منتجات',
+  'المنتجات',
+  'عندكم إيه',
+  'عندكم ايه',
+  'عايز أشوف',
+  'عايز اشوف',
+  'عاوز أشوف',
+  'عاوز اشوف',
+  'إيه عندكم',
+  'ايه عندكم',
+  'فيه إيه',
+  'فيه ايه',
+  'اشوف المنتجات',
+  'أشوف المنتجات',
+  'القائمة',
+  'الكتالوج',
+  'صور المنتجات',
+  'صور',
+  // عربي — شراء/سعر
+  'سعر',
+  'الأسعار',
+  'الاسعار',
+  'بكام',
+  'بكم',
+  'كام سعر',
+  'اشتري',
+  'أشتري',
+  'شراء',
+  'عايز اطلب',
+  'عاوز اطلب',
+  // إنجليزي
+  'show products',
+  'catalog',
+  'items',
+  'products',
+  'price',
+  'prices',
+  'buy',
+  'order',
+];
 
 @Injectable()
 export class ChatProductDecisionService {
@@ -26,10 +67,11 @@ export class ChatProductDecisionService {
       where: { tenantId, isActive: true },
       orderBy: { createdAt: 'desc' },
       take: 5,
-      select: { name: true, price: true, imageUrls: true },
+      select: { id: true, name: true, price: true, imageUrls: true },
     });
 
     return rows.map((p) => ({
+      id: p.id,
       name: p.name,
       price: p.price,
       imageUrl: Array.isArray(p.imageUrls) ? p.imageUrls[0]?.trim() : undefined,

@@ -48,6 +48,11 @@ export default () => ({
     apiKey: process.env.ANTHROPIC_API_KEY ?? '',
     timeoutMs: parseInt(process.env.ANTHROPIC_TIMEOUT_MS ?? '15000', 10),
   },
+  openai: {
+    apiKey: (process.env.OPENAI_API_KEY ?? '').trim(),
+    model: (process.env.OPENAI_MODEL ?? 'gpt-4o-mini').trim(),
+    timeoutMs: parseInt(process.env.OPENAI_TIMEOUT_MS ?? '15000', 10),
+  },
   jwt: {
     secret:
       process.env.JWT_SECRET ??

@@ -107,16 +107,21 @@ ${memoryText}
       memory: { role: 'user' | 'assistant'; content: string }[];
     },
   ): Promise<string> {
-    const apiKey =
+    const anthropicKey =
       this.config.get<string>('anthropic.apiKey', { infer: true }) ?? '';
-    if (!apiKey.trim()) {
+    const openaiKey = this.config.get<string>('openai.apiKey', {
+      infer: true,
+    });
+    if (!String(anthropicKey ?? '').trim() && !String(openaiKey ?? '').trim()) {
       return TIMEOUT_FALLBACK_AR;
     }
 
     const timeoutMs = Math.max(
       500,
       Number(
-        this.config.get<number>('anthropic.timeoutMs', { infer: true }) ?? 15000,
+        this.config.get<number>('anthropic.timeoutMs', { infer: true }) ??
+          this.config.get<number>('openai.timeoutMs', { infer: true }) ??
+          15000,
       ),
     );
 
@@ -131,35 +136,24 @@ ${memoryText}
         memory: context.memory,
       });
 
-      const res = await fetch('https://api.anthropic.com/v1/messages', {
-        method: 'POST',
-        signal: controller.signal,
-        headers: {
-          'x-api-key': apiKey.trim(),
-          'anthropic-version': '2023-06-01',
-          'content-type': 'application/json',
-        },
-        body: JSON.stringify({
-          model: 'claude-haiku-4-5-20251001',
-          max_tokens: 1024,
-          system,
-          messages: [{ role: 'user', content: message }],
-        }),
-      });
+      const text = String(anthropicKey ?? '').trim()
+        ? await this.askAnthropic({
+            apiKey: String(anthropicKey).trim(),
+            signal: controller.signal,
+            system,
+            message,
+          })
+        : await this.askOpenAI({
+            apiKey: String(openaiKey ?? '').trim(),
+            model:
+              this.config.get<string>('openai.model', { infer: true }) ??
+              'gpt-4o-mini',
+            signal: controller.signal,
+            system,
+            message,
+          });
 
-      if (!res.ok) {
-        const err = await res.text();
-        // eslint-disable-next-line no-console
-        console.error('Anthropic error:', err);
-        return TIMEOUT_FALLBACK_AR;
-      }
-
-      const data = (await res.json()) as {
-        content?: { type: string; text: string }[];
-      };
-
-      const text = data?.content?.[0]?.text?.trim();
-      if (!text || text.length === 0) return TIMEOUT_FALLBACK_AR;
+      if (!text) return TIMEOUT_FALLBACK_AR;
 
       const withShopLink = await this.maybeAppendShopLink(text, context.tenantId);
       return withShopLink;
@@ -168,6 +162,74 @@ ${memoryText}
     } finally {
       clearTimeout(t);
     }
+  }
+
+  private async askAnthropic(input: {
+    apiKey: string;
+    signal: AbortSignal;
+    system: string;
+    message: string;
+  }): Promise<string> {
+    const res = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      signal: input.signal,
+      headers: {
+        'x-api-key': input.apiKey,
+        'anthropic-version': '2023-06-01',
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: 'claude-haiku-4-5-20251001',
+        max_tokens: 1024,
+        system: input.system,
+        messages: [{ role: 'user', content: input.message }],
+      }),
+    });
+
+    if (!res.ok) {
+      return '';
+    }
+
+    const data = (await res.json()) as {
+      content?: { type: string; text: string }[];
+    };
+    return String(data?.content?.[0]?.text ?? '').trim();
+  }
+
+  private async askOpenAI(input: {
+    apiKey: string;
+    model: string;
+    signal: AbortSignal;
+    system: string;
+    message: string;
+  }): Promise<string> {
+    if (!input.apiKey) return '';
+    const res = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      signal: input.signal,
+      headers: {
+        authorization: `Bearer ${input.apiKey}`,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: input.model || 'gpt-4o-mini',
+        temperature: 0.4,
+        max_tokens: 350,
+        messages: [
+          { role: 'system', content: input.system },
+          { role: 'user', content: input.message },
+        ],
+      }),
+    });
+
+    if (!res.ok) {
+      return '';
+    }
+
+    const data = (await res.json()) as {
+      choices?: { message?: { content?: string } }[];
+    };
+    return String(data?.choices?.[0]?.message?.content ?? '').trim();
   }
 
   private async maybeAppendShopLink(

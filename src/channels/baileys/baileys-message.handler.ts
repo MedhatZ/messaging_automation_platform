@@ -119,6 +119,34 @@ export class BaileysMessageHandler {
         }
         // ابعت الرد النصي
         await this.baileys.sendText(tenantId, from, result.reply);
+
+        // ابعت لينك المتجر عند نية الشراء/الأوردر أو عند عرض منتجات (مرة واحدة لكل محادثة)
+        if (
+          tenant.slug &&
+          (result.branch === 'order' || Boolean(result.products?.length))
+        ) {
+          const row = await this.prisma.conversation.findUnique({
+            where: { id: conversation.id },
+            select: { tempData: true },
+          });
+          const current = (row?.tempData ?? {}) as any;
+          const alreadySent = Boolean(current?.shopLinkSent);
+          if (!alreadySent) {
+            const shopUrl = `https://messaging-automation-platform.vercel.app/shop.html?slug=${tenant.slug}`;
+            const shopText = `🛒 تقدر تكمل الطلب من هنا:\n${shopUrl}`;
+            await this.baileys.sendText(tenantId, from, shopText);
+            await this.prisma.$transaction(async (tx) => {
+              await this.chatService.saveOutgoingMessage(tx, conversation.id, shopText);
+              await tx.conversation.update({
+                where: { id: conversation.id },
+                data: {
+                  lastMessageAt: new Date(),
+                  tempData: { ...(typeof current === 'object' && current ? current : {}), shopLinkSent: true },
+                },
+              });
+            });
+          }
+        }
       }
     } catch (e) {
       this.logger.error(

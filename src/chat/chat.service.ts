@@ -56,6 +56,7 @@ export type ProcessMessageResult =
   | {
       success: true;
       matched: boolean;
+      branch: DecisionResult['branch'];
       reply: string;
       products?: ProcessMessageProductSummary[];
     }
@@ -351,6 +352,7 @@ export class ChatService {
     return {
       success: true,
       matched: decision.branch === 'faq',
+      branch: decision.branch,
       reply: decision.reply,
       ...(products && products.length > 0 && { products }),
     };

@@ -23,6 +23,7 @@ import { WhatsappAccountsModule } from './whatsapp-accounts/whatsapp-accounts.mo
 import { BroadcastModule } from './broadcast/broadcast.module';
 import { ShopModule } from './shop/shop.module';
 import { OrdersModule } from './orders/orders.module';
+import { BaileysModule } from './channels/baileys/baileys.module';
 
 const queuesDisabled = process.env.QUEUES_DISABLED === 'true';
 
@@ -67,6 +68,7 @@ const queuesDisabled = process.env.QUEUES_DISABLED === 'true';
     BroadcastModule,
     ShopModule,
     OrdersModule,
+    BaileysModule,
   ],
   controllers: [AppController],
   providers: [AppService],

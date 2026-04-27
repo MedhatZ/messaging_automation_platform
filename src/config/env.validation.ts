@@ -81,6 +81,10 @@ class EnvironmentVariables {
   @IsOptional()
   @IsString()
   WHATSAPP_CATALOG_ID?: string;
+
+  @IsOptional()
+  @IsEnum(['true', 'false'])
+  BAILEYS_ENABLED?: string;
 }
 
 export function validateEnv(config: Record<string, unknown>) {

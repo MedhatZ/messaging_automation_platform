@@ -2080,7 +2080,12 @@ export default function MessagingDashboard() {
                     maxLength={120}
                   />
                   <p className="field-hint">
-                    صفحة الشراء: <code>/shop.html?slug={settings.slug || 'tenant-slug'}</code>
+                    صفحة الشراء:{' '}
+                    <code>
+                      {`https://messaging-automation-platform.vercel.app/shop.html?slug=${
+                        settings.slug || 'tenant-slug'
+                      }`}
+                    </code>
                   </p>
                 </label>
 

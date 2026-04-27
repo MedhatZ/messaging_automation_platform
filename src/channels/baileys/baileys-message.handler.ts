@@ -112,12 +112,7 @@ export class BaileysMessageHandler {
         if (result.products?.length) {
           for (const p of result.products) {
             if (p.imageUrl) {
-              await this.baileys.sendImage(
-                tenantId,
-                from,
-                p.imageUrl,
-                `${p.name}\nالسعر: ${p.price} جنيه`,
-              );
+              await this.baileys.sendImage(tenantId, from, p.imageUrl, `${p.name}\nالسعر: ${p.price} جنيه`);
               await new Promise((r) => setTimeout(r, 1000));
             }
           }

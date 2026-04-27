@@ -414,6 +414,27 @@
 
       const params = new URLSearchParams(window.location.search);
       const slug = params.get('slug') || '';
+      const apiBaseParam = (params.get('apiBase') || '').trim().replace(/\/$/, '');
+      const apiBaseAuto = (() => {
+        const host = window.location.hostname || '';
+        // When hosted on Vercel, the API is typically on Render.
+        if (host.includes('vercel.app')) {
+          return 'https://messaging-automation-platform.onrender.com';
+        }
+        // Local dev fallback: same origin (Vite proxy can handle /api)
+        return '';
+      })();
+      const API_BASE = apiBaseParam || apiBaseAuto;
+
+      function resolveAssetUrl(url) {
+        const u = String(url || '').trim();
+        if (!u) return '';
+        if (/^https?:\/\//i.test(u)) return u;
+        if (u.startsWith('/')) {
+          return API_BASE ? `${API_BASE}${u}` : u;
+        }
+        return u;
+      }
       const state = {
         store: null,
         cart: new Map(),
@@ -463,7 +484,7 @@
         for (const url of images) {
           if (!url) continue;
           const img = document.createElement('img');
-          img.src = url;
+          img.src = resolveAssetUrl(url);
           img.alt = '';
           img.loading = 'lazy';
           els.welcomeImages.appendChild(img);
@@ -481,8 +502,9 @@
           const card = document.createElement('article');
           card.className = 'product-card';
           const image = product.imageUrl || (product.imageUrls || [])[0] || '';
+          const resolvedImage = resolveAssetUrl(image);
           card.innerHTML = `
-            <img class="product-image" src="${image || ''}" alt="${escapeHtml(product.name)}" loading="lazy" />
+            <img class="product-image" src="${resolvedImage || ''}" alt="${escapeHtml(product.name)}" loading="lazy" />
             <div class="product-body">
               <h3 class="product-name">${escapeHtml(product.name)}</h3>
               <p class="product-description">${escapeHtml(product.description || '')}</p>
@@ -569,7 +591,9 @@
 
         setLoading(true);
         try {
-          const res = await fetch(`/api/shop/${encodeURIComponent(slug)}`);
+          const res = await fetch(
+            (API_BASE ? `${API_BASE}/api/shop/${encodeURIComponent(slug)}` : `/api/shop/${encodeURIComponent(slug)}`),
+          );
           if (!res.ok) throw new Error('المتجر غير موجود');
           const data = await res.json();
           state.store = data;
@@ -621,11 +645,16 @@
         submitBtn.textContent = 'جاري تأكيد الطلب...';
 
         try {
-          const res = await fetch(`/api/shop/${encodeURIComponent(slug)}/order`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload),
-          });
+          const res = await fetch(
+            API_BASE
+              ? `${API_BASE}/api/shop/${encodeURIComponent(slug)}/order`
+              : `/api/shop/${encodeURIComponent(slug)}/order`,
+            {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(payload),
+            },
+          );
           const data = await res.json().catch(() => ({}));
           if (!res.ok) throw new Error(data.message || 'فشل تأكيد الطلب');
 

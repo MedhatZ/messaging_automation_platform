@@ -188,10 +188,49 @@ export class BaileysService implements OnModuleInit {
     const s = this.sessions.get(tenantId);
     if (!s?.sock) throw new Error('Baileys not connected');
     const jid = to.includes('@') ? to : `${to}@s.whatsapp.net`;
-    await s.sock.sendMessage(jid, {
-      image: { url: imageUrl },
-      caption: caption ?? '',
+    const url = String(imageUrl ?? '').trim();
+    if (!url) return;
+
+    // In some environments (e.g. Render), Baileys may fail to upload when given `{ url }`.
+    // To keep the chat flow stable, we fetch the image ourselves and send a Buffer.
+    try {
+      const buffer = await this.fetchImageBuffer(url);
+      await s.sock.sendMessage(jid, {
+        image: buffer,
+        caption: caption ?? '',
+      });
+    } catch (err) {
+      this.logger.warn(
+        `sendImage failed tenant=${tenantId} to=${jid} url=${url} err=${err instanceof Error ? err.message : String(err)}`,
+      );
+      // best-effort: do not throw and break message handling
+    }
+  }
+
+  private async fetchImageBuffer(url: string): Promise<Buffer> {
+    if (!/^https?:\/\//i.test(url)) {
+      throw new Error('imageUrl must be http(s)');
+    }
+    const res = await fetch(url, {
+      // avoid hanging forever
+      signal: AbortSignal.timeout(20_000),
+      headers: {
+        'user-agent': 'messaging-automation-platform/baileys',
+      },
     });
+    if (!res.ok) {
+      throw new Error(`image fetch failed: ${res.status} ${res.statusText}`);
+    }
+    const ab = await res.arrayBuffer();
+    const buf = Buffer.from(ab);
+    if (buf.length === 0) {
+      throw new Error('image fetch returned empty body');
+    }
+    // crude safety cap (10MB)
+    if (buf.length > 10 * 1024 * 1024) {
+      throw new Error(`image too large: ${buf.length} bytes`);
+    }
+    return buf;
   }
 }
 

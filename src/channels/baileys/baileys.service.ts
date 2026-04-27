@@ -9,7 +9,10 @@ import { Boom } from '@hapi/boom';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import pino from 'pino';
 import * as path from 'path';
-import * as qrcode from 'qrcode-terminal';
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const qrcode = require('qrcode-terminal') as {
+  generate: (text: string, opts?: { small?: boolean }) => void;
+};
 
 @Injectable()
 export class BaileysService implements OnModuleInit {

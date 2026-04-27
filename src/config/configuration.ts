@@ -46,7 +46,8 @@ export default () => ({
   },
   anthropic: {
     apiKey: (process.env.ANTHROPIC_API_KEY ?? '').trim(),
-    model: (process.env.ANTHROPIC_MODEL ?? 'claude-3-5-haiku-latest').trim(),
+    // Can be a single model or a comma-separated list to allow fallback.
+    model: (process.env.ANTHROPIC_MODEL ?? '').trim(),
     timeoutMs: parseInt(process.env.ANTHROPIC_TIMEOUT_MS ?? '15000', 10),
   },
   openai: {

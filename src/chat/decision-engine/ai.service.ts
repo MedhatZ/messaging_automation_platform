@@ -141,9 +141,7 @@ ${memoryText}
       const text = String(anthropicKey ?? '').trim()
         ? await this.askAnthropic({
             apiKey: String(anthropicKey).trim(),
-            model:
-              this.config.get<string>('anthropic.model', { infer: true }) ??
-              'claude-3-5-haiku-latest',
+            models: this.resolveAnthropicModels(),
             signal: controller.signal,
             system,
             message,
@@ -169,45 +167,85 @@ ${memoryText}
     }
   }
 
+  private resolveAnthropicModels(): string[] {
+    const raw =
+      (this.config.get<string>('anthropic.model', { infer: true }) ?? '').trim();
+
+    const fromEnv = raw
+      ? raw
+          .split(',')
+          .map((s) => s.trim())
+          .filter(Boolean)
+      : [];
+
+    // Try env-provided model(s) first, then a few common stable identifiers.
+    const fallbacks = [
+      'claude-3-5-haiku-latest',
+      'claude-3-5-sonnet-latest',
+      'claude-3-haiku-20240307',
+      'claude-3-sonnet-20240229',
+      'claude-3-opus-20240229',
+    ];
+
+    const out: string[] = [];
+    for (const m of [...fromEnv, ...fallbacks]) {
+      const v = String(m ?? '').trim();
+      if (!v) continue;
+      if (!out.includes(v)) out.push(v);
+    }
+    return out;
+  }
+
   private async askAnthropic(input: {
     apiKey: string;
-    model: string;
+    models: string[];
     signal: AbortSignal;
     system: string;
     message: string;
   }): Promise<string> {
-    const res = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      signal: input.signal,
-      headers: {
-        'x-api-key': input.apiKey,
-        'anthropic-version': '2023-06-01',
-        'content-type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: input.model,
-        max_tokens: 1024,
-        system: input.system,
-        messages: [{ role: 'user', content: input.message }],
-      }),
-    });
+    const models = Array.isArray(input.models) ? input.models : [];
+    const candidates = models.length > 0 ? models : this.resolveAnthropicModels();
 
-    if (!res.ok) {
-      try {
-        const errText = await res.text();
-        this.logger.warn(
-          `Anthropic error: ${res.status} ${res.statusText} ${errText}`,
-        );
-      } catch {
-        this.logger.warn(`Anthropic error: ${res.status} ${res.statusText}`);
+    for (const model of candidates) {
+      const res = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        signal: input.signal,
+        headers: {
+          'x-api-key': input.apiKey,
+          'anthropic-version': '2023-06-01',
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          model,
+          max_tokens: 1024,
+          system: input.system,
+          messages: [{ role: 'user', content: input.message }],
+        }),
+      });
+
+      if (!res.ok) {
+        try {
+          const errText = await res.text();
+          this.logger.warn(
+            `Anthropic error (model=${model}): ${res.status} ${res.statusText} ${errText}`,
+          );
+        } catch {
+          this.logger.warn(
+            `Anthropic error (model=${model}): ${res.status} ${res.statusText}`,
+          );
+        }
+        // If model is not found / unauthorized, try next model.
+        continue;
       }
-      return '';
+
+      const data = (await res.json()) as {
+        content?: { type: string; text: string }[];
+      };
+      const text = String(data?.content?.[0]?.text ?? '').trim();
+      if (text) return text;
     }
 
-    const data = (await res.json()) as {
-      content?: { type: string; text: string }[];
-    };
-    return String(data?.content?.[0]?.text ?? '').trim();
+    return '';
   }
 
   private async askOpenAI(input: {

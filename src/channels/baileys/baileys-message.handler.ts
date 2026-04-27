@@ -91,18 +91,20 @@ export class BaileysMessageHandler {
       });
 
       if (result.success) {
+        // ابعت الصور لو في منتجات
         if (result.products?.length) {
           for (const p of result.products) {
-            const imageUrl = (p as any)?.imageUrl;
-            if (imageUrl) {
+            if (p.imageUrl) {
               await this.baileys.sendImage(
                 from,
-                imageUrl,
-                `${(p as any)?.name ?? ''}\nالسعر: ${(p as any)?.price ?? ''} جنيه`,
+                p.imageUrl,
+                `${p.name}\nالسعر: ${p.price} جنيه`,
               );
+              await new Promise((r) => setTimeout(r, 1000));
             }
           }
         }
+        // ابعت الرد النصي
         await this.baileys.sendText(from, result.reply);
       }
     } catch (e) {

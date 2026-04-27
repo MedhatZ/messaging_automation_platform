@@ -81,6 +81,20 @@ class EnvironmentVariables {
 
   @IsOptional()
   @IsString()
+  ANTHROPIC_API_KEY?: string;
+
+  @IsOptional()
+  @IsString()
+  ANTHROPIC_MODEL?: string;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(500)
+  @Max(60_000)
+  ANTHROPIC_TIMEOUT_MS?: number;
+
+  @IsOptional()
+  @IsString()
   WHATSAPP_CATALOG_ID?: string;
 
   @IsOptional()

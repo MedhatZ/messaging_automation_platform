@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type { ChatLang } from '../../common/detect-message-language';
 import { PrismaService } from '../../database/prisma.service';
@@ -19,6 +19,8 @@ const SHOP_INTENT_KEYWORDS = [
 
 @Injectable()
 export class ChatAiDecisionService {
+  private readonly logger = new Logger(ChatAiDecisionService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
@@ -139,6 +141,9 @@ ${memoryText}
       const text = String(anthropicKey ?? '').trim()
         ? await this.askAnthropic({
             apiKey: String(anthropicKey).trim(),
+            model:
+              this.config.get<string>('anthropic.model', { infer: true }) ??
+              'claude-3-5-haiku-latest',
             signal: controller.signal,
             system,
             message,
@@ -166,6 +171,7 @@ ${memoryText}
 
   private async askAnthropic(input: {
     apiKey: string;
+    model: string;
     signal: AbortSignal;
     system: string;
     message: string;
@@ -179,7 +185,7 @@ ${memoryText}
         'content-type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'claude-haiku-4-5-20251001',
+        model: input.model,
         max_tokens: 1024,
         system: input.system,
         messages: [{ role: 'user', content: input.message }],
@@ -187,6 +193,14 @@ ${memoryText}
     });
 
     if (!res.ok) {
+      try {
+        const errText = await res.text();
+        this.logger.warn(
+          `Anthropic error: ${res.status} ${res.statusText} ${errText}`,
+        );
+      } catch {
+        this.logger.warn(`Anthropic error: ${res.status} ${res.statusText}`);
+      }
       return '';
     }
 

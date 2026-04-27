@@ -38,6 +38,7 @@ export type FindOrCreateConversationInput = {
   channelType: ChannelType;
   externalUserId: string;
   externalUserName?: string;
+  whatsappAccountId?: string;
 };
 
 export type ProcessMessageInput = FindOrCreateConversationInput & {
@@ -91,9 +92,29 @@ export class ChatService {
         tenantId: input.tenantId,
         externalUserId: input.externalUserId,
       },
-      select: { id: true, language: true },
+      select: { id: true, language: true, tempData: true },
     });
     if (existing) {
+      if (input.whatsappAccountId) {
+        const current = existing.tempData ?? {};
+        if (
+          typeof current === 'object' &&
+          current !== null &&
+          (current as any).whatsappAccountId !== input.whatsappAccountId
+        ) {
+          void this.prisma.conversation
+            .update({
+              where: { id: existing.id },
+              data: {
+                tempData: {
+                  ...(current as Record<string, unknown>),
+                  whatsappAccountId: input.whatsappAccountId,
+                },
+              },
+            })
+            .catch(() => undefined);
+        }
+      }
       return existing;
     }
     try {
@@ -103,6 +124,9 @@ export class ChatService {
           channelType: input.channelType,
           externalUserId: input.externalUserId,
           externalUserName: input.externalUserName,
+          ...(input.whatsappAccountId
+            ? { tempData: { whatsappAccountId: input.whatsappAccountId } }
+            : {}),
         },
         select: { id: true, language: true },
       });

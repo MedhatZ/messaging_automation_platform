@@ -76,12 +76,18 @@ export class BaileysMessageHandler {
         }
       }
 
+      const waAccount = await this.prisma.whatsappAccount.findFirst({
+        where: { tenantId: tenant.id, status: 'active' },
+        select: { id: true },
+      });
+
       const result = await this.chatService.processMessage({
         tenantId: tenant.id,
         channelType: ChannelType.WHATSAPP,
         externalUserId: phone,
         externalUserName: undefined,
         message: text,
+        whatsappAccountId: waAccount?.id,
       });
 
       if (result.success) {

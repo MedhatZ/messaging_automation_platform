@@ -14,8 +14,28 @@ const ORDER_INTENT = [
   'buy',
   'هاخد',
   'محتاج اطلب',
-  'ابعتلي',
 ];
+
+const CANCEL_INTENT = [
+  'الغاء',
+  'إلغاء',
+  'كنسل',
+  'cancel',
+  'stop',
+] as const;
+
+const SHOW_PRODUCTS_INTENT = [
+  'منتجات',
+  'المنتجات',
+  'اعرض المنتجات',
+  'عرض المنتجات',
+  'اشوف المنتجات',
+  'أشوف المنتجات',
+  'catalog',
+  'products',
+] as const;
+
+const ORDER_FLOW_TTL_MS = 15 * 60 * 1000;
 
 // المرحلة 1 — طلب الاسم
 const ASK_NAME = `تمام! 😊 هنكمل الطلب دلوقتي.
@@ -80,6 +100,25 @@ export class ChatOrderDecisionService {
     const phone = (input.phone ?? '').trim();
     if (!phone) return { handled: false };
 
+    const msg = String(input.message ?? '').trim();
+    const normalized = normalizeArabic(msg.toLowerCase());
+
+    // Let product listing bypass order flow.
+    if (this.isShowProductsIntent(normalized)) {
+      return { handled: false };
+    }
+
+    // Allow user to cancel an in-progress order flow.
+    if (this.isCancelIntent(normalized)) {
+      await this.prisma.lead
+        .update({
+          where: { tenantId_phone: { tenantId: input.tenantId, phone } },
+          data: { orderStep: null },
+        })
+        .catch(() => undefined);
+      return { handled: true, reply: 'تمام، تم إلغاء الطلب. تحب أساعدك في إيه؟' };
+    }
+
     // جيب الـ lead الحالي لو في order جاري
     const pending = await this.prisma.lead.findFirst({
       where: {
@@ -97,21 +136,28 @@ export class ChatOrderDecisionService {
         location: true,
         interest: true,
         size: true,
+        updatedAt: true,
       },
     });
 
     if (pending) {
-      return this.handleOrderStep(pending, input.message, input.tenantId);
+      const isFresh =
+        Date.now() - new Date(pending.updatedAt).getTime() <= ORDER_FLOW_TTL_MS;
+      // If the flow is stale, only resume when user explicitly shows order intent.
+      if (!isFresh && !this.isOrderIntent(msg)) {
+        return { handled: false };
+      }
+      return this.handleOrderStep(pending, msg, input.tenantId);
     }
 
     // مفيش order جاري — تحقق من intent
-    if (!this.isOrderIntent(input.message)) return { handled: false };
+    if (!this.isOrderIntent(msg)) return { handled: false };
 
     // ابدأ order جديد
     await this.prisma.lead.upsert({
       where: { tenantId_phone: { tenantId: input.tenantId, phone } },
       update: {
-        lastMessage: input.message,
+        lastMessage: msg,
         orderStep: 'awaiting_name',
         status: LeadStatus.NEW,
       },
@@ -120,12 +166,29 @@ export class ChatOrderDecisionService {
         phone,
         name: input.name ?? null,
         status: LeadStatus.NEW,
-        lastMessage: input.message,
+        lastMessage: msg,
         orderStep: 'awaiting_name',
       },
     });
 
     return { handled: true, reply: ASK_NAME };
+  }
+
+  private isCancelIntent(normalizedLowerArabic: string): boolean {
+    return CANCEL_INTENT.some((k) =>
+      normalizedLowerArabic.includes(normalizeArabic(String(k).toLowerCase())),
+    );
+  }
+
+  private isShowProductsIntent(normalizedLowerArabic: string): boolean {
+    return SHOW_PRODUCTS_INTENT.some((k) =>
+      normalizedLowerArabic.includes(normalizeArabic(String(k).toLowerCase())),
+    );
+  }
+
+  private looksLikePhone(text: string): boolean {
+    const digits = text.replace(/[^\d]/g, '');
+    return digits.length >= 8 && digits.length <= 15;
   }
 
   private async handleOrderStep(
@@ -137,6 +200,7 @@ export class ChatOrderDecisionService {
       location: string | null;
       interest: string | null;
       size: string | null;
+      updatedAt: Date;
     },
     message: string,
     tenantId: string,
@@ -147,6 +211,9 @@ export class ChatOrderDecisionService {
 
     switch (step) {
       case 'awaiting_name': {
+        if (!text || text.length < 2) {
+          return { handled: true, reply: ASK_NAME };
+        }
         await this.prisma.lead.update({
           where: { id: lead.id },
           data: { name: text, orderStep: 'awaiting_phone' },
@@ -155,6 +222,12 @@ export class ChatOrderDecisionService {
       }
 
       case 'awaiting_phone': {
+        if (!this.looksLikePhone(text)) {
+          return {
+            handled: true,
+            reply: 'ممكن رقم تليفون صحيح من فضلك؟ (مثال: 01xxxxxxxxx)',
+          };
+        }
         await this.prisma.lead.update({
           where: { id: lead.id },
           data: { orderPhone: text, orderStep: 'awaiting_address' },
@@ -163,6 +236,9 @@ export class ChatOrderDecisionService {
       }
 
       case 'awaiting_address': {
+        if (text.length < 6) {
+          return { handled: true, reply: ASK_ADDRESS };
+        }
         await this.prisma.lead.update({
           where: { id: lead.id },
           data: { location: text, orderStep: 'awaiting_product' },
@@ -171,6 +247,11 @@ export class ChatOrderDecisionService {
       }
 
       case 'awaiting_product': {
+        // Allow user to ask for products list instead of capturing it as product name.
+        const normalized = normalizeArabic(text.toLowerCase());
+        if (this.isShowProductsIntent(normalized)) {
+          return { handled: true, reply: 'أكيد—قولّي بس عايز تشوف إيه بالظبط؟ أو ابعت "اعرض المنتجات".' };
+        }
         await this.prisma.lead.update({
           where: { id: lead.id },
           data: { interest: text, orderStep: 'awaiting_notes' },

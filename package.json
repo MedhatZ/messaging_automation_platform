@@ -6,7 +6,7 @@
   "private": true,
   "license": "UNLICENSED",
   "scripts": {
-    "build": "prisma generate && npx @nestjs/cli build --preserve-watch-output",
+    "build": "prisma generate && npx @nestjs/cli build --builder tsc --path tsconfig.build.json",
     "postinstall": "prisma generate",
     "dev": "nest start --watch",
     "prisma:generate": "prisma generate",

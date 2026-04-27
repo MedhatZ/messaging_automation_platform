@@ -33,46 +33,70 @@ export class BaileysMessageHandler {
     }
 
     try {
-      // رسالة الترحيب لأول رسالة
-      const isFirst = !(await this.prisma.conversation.findFirst({
-        where: { tenantId, externalUserId: phone },
+      const waAccount = await this.prisma.whatsappAccount.findFirst({
+        where: { tenantId, status: 'active' },
         select: { id: true },
-      }));
+      });
 
-      if (isFirst) {
+      // Ensure a conversation exists early so welcome messages can be persisted.
+      const conversation = await this.chatService.findOrCreateConversation({
+        tenantId,
+        channelType: ChannelType.WHATSAPP,
+        externalUserId: phone,
+        externalUserName: undefined,
+        whatsappAccountId: waAccount?.id,
+      });
+
+      // رسالة الترحيب لأول رسالة (based on message count, not just conversation presence)
+      const messageCount = await this.prisma.message.count({
+        where: { conversationId: conversation.id },
+      });
+      const isFirstMessage = messageCount === 0;
+
+      if (isFirstMessage) {
         const settings = await this.prisma.botSettings.findUnique({
           where: { tenantId },
           select: { welcomeMessage: true, welcomeImages: true },
         });
 
-        // ابعت رسالة الترحيب
-        if (settings?.welcomeMessage?.trim()) {
-          await this.baileys.sendText(tenantId, from, settings.welcomeMessage.trim());
+        const welcomeText = String(settings?.welcomeMessage ?? '').trim();
+        if (welcomeText) {
+          await this.baileys.sendText(tenantId, from, welcomeText);
+          await this.prisma.$transaction(async (tx) => {
+            await this.chatService.saveOutgoingMessage(tx, conversation.id, welcomeText);
+            await tx.conversation.update({
+              where: { id: conversation.id },
+              data: { lastMessageAt: new Date() },
+            });
+          });
           await new Promise((r) => setTimeout(r, 1000));
         }
 
-        // ابعت الصور
+        // ابعت الصور (لا نسجلها كرسالة نصية، لكن نسيبها outbound فقط)
         if (Array.isArray(settings?.welcomeImages)) {
           for (const img of settings.welcomeImages) {
-            if (img?.trim()) {
-              await this.baileys.sendImage(tenantId, from, img.trim());
-              await new Promise((r) => setTimeout(r, 1000));
-            }
+            const imageUrl = String(img ?? '').trim();
+            if (!imageUrl) continue;
+            await this.baileys.sendImage(tenantId, from, imageUrl);
+            await new Promise((r) => setTimeout(r, 1000));
           }
         }
 
-        // ابعت رابط صفحة الشراء
+        // ابعت رابط صفحة الشراء (ونسجله)
         if (tenant.slug) {
           const shopUrl = `https://messaging-automation-platform.vercel.app/shop.html?slug=${tenant.slug}`;
-          await this.baileys.sendText(tenantId, from, `🛒 تقدر تشوف منتجاتنا وتطلب من هنا:\n${shopUrl}`);
+          const shopText = `🛒 تقدر تشوف منتجاتنا وتطلب من هنا:\n${shopUrl}`;
+          await this.baileys.sendText(tenantId, from, shopText);
+          await this.prisma.$transaction(async (tx) => {
+            await this.chatService.saveOutgoingMessage(tx, conversation.id, shopText);
+            await tx.conversation.update({
+              where: { id: conversation.id },
+              data: { lastMessageAt: new Date() },
+            });
+          });
           await new Promise((r) => setTimeout(r, 500));
         }
       }
-
-      const waAccount = await this.prisma.whatsappAccount.findFirst({
-        where: { tenantId, status: 'active' },
-        select: { id: true },
-      });
 
       const result = await this.chatService.processMessage({
         tenantId,
@@ -102,7 +126,10 @@ export class BaileysMessageHandler {
         await this.baileys.sendText(tenantId, from, result.reply);
       }
     } catch (e) {
-      this.logger.error('Message handling failed', e);
+      this.logger.error(
+        `Message handling failed tenantId=${tenantId} from=${from}`,
+        e instanceof Error ? e.stack : e,
+      );
     }
   }
 }

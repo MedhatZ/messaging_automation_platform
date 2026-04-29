@@ -33,6 +33,25 @@ function basenameFromUrl(url) {
   }
 }
 
+const TABS_CONTAINER_STYLE = {
+  display: 'flex',
+  overflowX: 'auto',
+  WebkitOverflowScrolling: 'touch',
+  gap: '0.5rem',
+  padding: '0.5rem',
+  borderBottom: '1px solid #ddd',
+  scrollbarWidth: 'none',
+  marginBottom: '1rem',
+};
+
+const TAB_BUTTON_STYLE = {
+  flexShrink: 0,
+  whiteSpace: 'nowrap',
+  padding: '0.5rem 1rem',
+  borderRadius: '8px',
+  fontSize: '0.9rem',
+};
+
 export default function MessagingDashboard() {
   const { t, i18n } = useTranslation();
   const navigate = useNavigate();
@@ -913,10 +932,15 @@ export default function MessagingDashboard() {
         </div>
       </header>
 
-      <nav className="tabs" aria-label={t('aria.mainNav')}>
+      <nav
+        role="tablist"
+        aria-label={t('aria.mainNav')}
+        style={TABS_CONTAINER_STYLE}
+      >
         <button
           type="button"
           className={view === 'leads' ? 'tab active' : 'tab'}
+          style={TAB_BUTTON_STYLE}
           onClick={() => {
             setView('leads');
             closeConversation();
@@ -927,6 +951,7 @@ export default function MessagingDashboard() {
         <button
           type="button"
           className={view === 'conversations' ? 'tab active' : 'tab'}
+          style={TAB_BUTTON_STYLE}
           onClick={() => {
             setView('conversations');
             closeConversation();
@@ -937,6 +962,7 @@ export default function MessagingDashboard() {
         <button
           type="button"
           className={view === 'products' ? 'tab active' : 'tab'}
+          style={TAB_BUTTON_STYLE}
           onClick={() => {
             setView('products');
             closeConversation();
@@ -947,6 +973,7 @@ export default function MessagingDashboard() {
         <button
           type="button"
           className={view === 'faq' ? 'tab active' : 'tab'}
+          style={TAB_BUTTON_STYLE}
           onClick={() => {
             setView('faq');
             closeConversation();
@@ -957,6 +984,7 @@ export default function MessagingDashboard() {
         <button
           type="button"
           className={view === 'stats' ? 'tab active' : 'tab'}
+          style={TAB_BUTTON_STYLE}
           onClick={() => {
             setView('stats');
             closeConversation();
@@ -967,6 +995,7 @@ export default function MessagingDashboard() {
         <button
           type="button"
           className={view === 'orders' ? 'tab active' : 'tab'}
+          style={TAB_BUTTON_STYLE}
           onClick={() => {
             setView('orders');
             closeConversation();
@@ -977,6 +1006,7 @@ export default function MessagingDashboard() {
         <button
           type="button"
           className={view === 'settings' ? 'tab active' : 'tab'}
+          style={TAB_BUTTON_STYLE}
           onClick={() => {
             setView('settings');
             closeConversation();
@@ -984,7 +1014,11 @@ export default function MessagingDashboard() {
         >
           ⚙️ الإعدادات
         </button>
-        <Link to="/dashboard/whatsapp-accounts" className="tab">
+        <Link
+          to="/dashboard/whatsapp-accounts"
+          className="tab"
+          style={TAB_BUTTON_STYLE}
+        >
           {t('tabs.waAccounts')}
         </Link>
       </nav>

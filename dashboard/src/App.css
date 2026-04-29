@@ -809,3 +809,22 @@ a.tab {
     flex-wrap: wrap;
   }
 }
+
+@media (max-width: 768px) {
+  .dashboard-container {
+    padding: 0.5rem;
+  }
+
+  table {
+    min-width: 500px;
+  }
+
+  .form-row {
+    flex-direction: column;
+  }
+}
+
+/* Hide scrollbar for the inline-styled tabs nav (uses scrollbarWidth: none) */
+nav[role='tablist']::-webkit-scrollbar {
+  display: none;
+}

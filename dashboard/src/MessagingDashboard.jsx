@@ -127,28 +127,6 @@ export default function MessagingDashboard() {
 
   const tenantReady = Boolean(tenantId && tenantId.length > 10);
 
-  const [baileysQr, setBaileysQr] = useState(null);
-  const [baileysConnected, setBaileysConnected] = useState(false);
-  const [baileysLoading, setBaileysLoading] = useState(false);
-  const [baileysError, setBaileysError] = useState(null);
-
-  const loadBaileysQr = useCallback(async () => {
-    setBaileysLoading(true);
-    setBaileysError(null);
-    try {
-      const { data } = await api.get('/baileys/qr');
-      setBaileysQr(data?.qr ?? null);
-      setBaileysConnected(Boolean(data?.connected));
-    } catch (e) {
-      const msg = e.response?.data?.message || e.message || 'فشل تحميل QR';
-      setBaileysError(typeof msg === 'string' ? msg : JSON.stringify(msg));
-      setBaileysQr(null);
-      setBaileysConnected(false);
-    } finally {
-      setBaileysLoading(false);
-    }
-  }, []);
-
   const loadLeads = useCallback(async () => {
     setError(null);
     setLeadsLoading(true);
@@ -1005,17 +983,6 @@ export default function MessagingDashboard() {
           }}
         >
           ⚙️ الإعدادات
-        </button>
-        <button
-          type="button"
-          className={view === 'wa_qr' ? 'tab active' : 'tab'}
-          onClick={() => {
-            setView('wa_qr');
-            closeConversation();
-            void loadBaileysQr();
-          }}
-        >
-          📱 واتساب QR
         </button>
         <Link to="/dashboard/whatsapp-accounts" className="tab">
           {t('tabs.waAccounts')}
@@ -2262,59 +2229,6 @@ export default function MessagingDashboard() {
               </button>
             </form>
           )}
-        </>
-      )}
-
-      {view === 'wa_qr' && (
-        <>
-          <h2 className="section-title">📱 واتساب QR</h2>
-
-          {baileysError && <div className="error">{baileysError}</div>}
-
-          <div className="table-wrap" style={{ marginTop: 10 }}>
-            <div
-              style={{
-                display: 'flex',
-                gap: 10,
-                alignItems: 'center',
-                flexWrap: 'wrap',
-              }}
-            >
-              <button
-                type="button"
-                className="btn-primary"
-                onClick={() => void loadBaileysQr()}
-                disabled={baileysLoading}
-              >
-                {baileysLoading ? 'جاري التحميل...' : '🔄 تحديث'}
-              </button>
-              <span>
-                الحالة: {baileysConnected ? '✅ واتساب متصل' : '⏳ غير متصل'}
-              </span>
-            </div>
-
-            {!baileysConnected && baileysQr ? (
-              <div
-                style={{
-                  marginTop: 12,
-                  display: 'flex',
-                  justifyContent: 'center',
-                }}
-              >
-                <img
-                  alt="WhatsApp QR"
-                  src={`https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(baileysQr)}`}
-                  width={300}
-                  height={300}
-                  style={{
-                    borderRadius: 12,
-                    border: '1px solid #e2e8f0',
-                    background: '#fff',
-                  }}
-                />
-              </div>
-            ) : null}
-          </div>
         </>
       )}
 

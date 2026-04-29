@@ -64,6 +64,5 @@ export default () => ({
   },
   baileys: {
     enabled: (process.env.BAILEYS_ENABLED ?? '').trim(),
-    tenantId: (process.env.BAILEYS_TENANT_ID ?? '').trim(),
   },
 });

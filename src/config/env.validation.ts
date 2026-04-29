@@ -6,7 +6,6 @@ import {
   IsOptional,
   IsString,
   IsUrl,
-  IsUUID,
   Max,
   Min,
   validateSync,
@@ -100,14 +99,6 @@ class EnvironmentVariables {
   @IsOptional()
   @IsEnum(['true', 'false'])
   BAILEYS_ENABLED?: string;
-
-  /**
-   * When using Baileys (WhatsApp Web via QR), we must route inbound messages to a tenant.
-   * This explicitly pins Baileys to a single tenant in multi-tenant environments.
-   */
-  @IsOptional()
-  @IsUUID()
-  BAILEYS_TENANT_ID?: string;
 
   /**
    * Filesystem directory for Baileys multi-file auth state.

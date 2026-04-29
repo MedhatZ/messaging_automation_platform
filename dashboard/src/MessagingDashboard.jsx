@@ -922,7 +922,28 @@ export default function MessagingDashboard() {
       <header className="app-header">
         <div className="app-header-main">
           <h1>{t('app.title')}</h1>
-          <p>{t('app.subtitle')}</p>
+          <div
+            style={{
+              marginTop: '0.35rem',
+              color: '#555',
+              fontSize: '0.9rem',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.4rem',
+            }}
+          >
+            <span>{t('realtime.status')}:</span>
+            <span
+              style={{
+                width: 8,
+                height: 8,
+                borderRadius: '50%',
+                background: socketConnected ? '#22c55e' : '#ef4444',
+                display: 'inline-block',
+                marginInlineStart: '0.5rem',
+              }}
+            />
+          </div>
         </div>
         <div className="app-header-actions">
           <LanguageSwitcher />
@@ -1028,9 +1049,6 @@ export default function MessagingDashboard() {
       )}
 
       {error && <div className="error">{error}</div>}
-      <div className="banner" style={{ marginTop: 10 }}>
-        {t('realtime.status')}: {socketConnected ? t('realtime.connected') : t('realtime.disconnected')}
-      </div>
 
       {view === 'leads' && (
         <>

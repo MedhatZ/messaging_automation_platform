@@ -19,87 +19,60 @@ export class BaileysMessageHandler {
   async handleMessage(payload: { tenantId: string; from: string; text: string }) {
     const { tenantId, from, text } = payload;
     const phone = from.replace('@s.whatsapp.net', '').replace('@g.us', '');
+
     const tenant = await this.prisma.tenant.findUnique({
       where: { id: tenantId },
-      select: { id: true, isActive: true, slug: true, name: true },
+      select: { id: true, slug: true, name: true, isActive: true },
     });
-    if (!tenant) {
-      this.logger.warn(`Tenant not found: tenantId=${tenantId}`);
-      return;
-    }
-    if (!tenant.isActive) {
-      this.logger.warn(`Tenant inactive: tenantId=${tenantId}`);
-      return;
-    }
 
-    try {
-      const waAccount = await this.prisma.whatsappAccount.findFirst({
-        where: { tenantId, status: 'active' },
-        select: { id: true },
+    if (!tenant || !tenant.isActive) return;
+
+    const waAccount = await this.prisma.whatsappAccount.findFirst({
+      where: { tenantId: tenant.id, status: 'active' },
+      select: { id: true },
+    });
+
+    // ─── Welcome (أول رسالة فقط) ───
+    const existingConv = await this.prisma.conversation.findFirst({
+      where: { tenantId: tenant.id, externalUserId: phone },
+      select: { id: true },
+    });
+
+    if (!existingConv) {
+      const settings = await this.prisma.botSettings.findUnique({
+        where: { tenantId: tenant.id },
+        select: { welcomeMessage: true, welcomeImages: true },
       });
 
-      // Ensure a conversation exists early so welcome messages can be persisted.
-      const conversation = await this.chatService.findOrCreateConversation({
-        tenantId,
-        channelType: ChannelType.WHATSAPP,
-        externalUserId: phone,
-        externalUserName: undefined,
-        whatsappAccountId: waAccount?.id,
-      });
+      if (settings?.welcomeMessage?.trim()) {
+        await this.baileys.sendText(tenantId, from, settings.welcomeMessage.trim());
+        await new Promise((r) => setTimeout(r, 1000));
+      }
 
-      // رسالة الترحيب لأول رسالة (based on message count, not just conversation presence)
-      const messageCount = await this.prisma.message.count({
-        where: { conversationId: conversation.id },
-      });
-      const isFirstMessage = messageCount === 0;
-
-      if (isFirstMessage) {
-        const settings = await this.prisma.botSettings.findUnique({
-          where: { tenantId },
-          select: { welcomeMessage: true, welcomeImages: true },
-        });
-
-        const welcomeText = String(settings?.welcomeMessage ?? '').trim();
-        if (welcomeText) {
-          await this.baileys.sendText(tenantId, from, welcomeText);
-          await this.prisma.$transaction(async (tx) => {
-            await this.chatService.saveOutgoingMessage(tx, conversation.id, welcomeText);
-            await tx.conversation.update({
-              where: { id: conversation.id },
-              data: { lastMessageAt: new Date() },
-            });
-          });
-          await new Promise((r) => setTimeout(r, 1000));
-        }
-
-        // ابعت الصور (لا نسجلها كرسالة نصية، لكن نسيبها outbound فقط)
-        if (Array.isArray(settings?.welcomeImages)) {
-          for (const img of settings.welcomeImages) {
-            const imageUrl = String(img ?? '').trim();
-            if (!imageUrl) continue;
-            await this.baileys.sendImage(tenantId, from, imageUrl);
+      if (Array.isArray(settings?.welcomeImages)) {
+        for (const img of settings.welcomeImages) {
+          if (img?.trim()) {
+            await this.baileys.sendImage(tenantId, from, img.trim());
             await new Promise((r) => setTimeout(r, 1000));
           }
         }
-
-        // ابعت رابط صفحة الشراء (ونسجله)
-        if (tenant.slug) {
-          const shopUrl = `https://messaging-automation-platform.vercel.app/shop.html?slug=${tenant.slug}`;
-          const shopText = `🛒 تقدر تشوف منتجاتنا وتطلب من هنا:\n${shopUrl}`;
-          await this.baileys.sendText(tenantId, from, shopText);
-          await this.prisma.$transaction(async (tx) => {
-            await this.chatService.saveOutgoingMessage(tx, conversation.id, shopText);
-            await tx.conversation.update({
-              where: { id: conversation.id },
-              data: { lastMessageAt: new Date() },
-            });
-          });
-          await new Promise((r) => setTimeout(r, 500));
-        }
       }
 
+      if (tenant.slug) {
+        const shopUrl = `https://messaging-automation-platform.vercel.app/shop.html?slug=${tenant.slug}`;
+        await this.baileys.sendText(
+          tenantId,
+          from,
+          `🛒 شوف منتجاتنا واطلب من هنا:\n${shopUrl}`,
+        );
+        await new Promise((r) => setTimeout(r, 500));
+      }
+    }
+
+    // ─── Chat Engine ───
+    try {
       const result = await this.chatService.processMessage({
-        tenantId,
+        tenantId: tenant.id,
         channelType: ChannelType.WHATSAPP,
         externalUserId: phone,
         externalUserName: undefined,
@@ -107,52 +80,51 @@ export class BaileysMessageHandler {
         whatsappAccountId: waAccount?.id,
       });
 
-      if (result.success) {
-        // ابعت الصور لو في منتجات
-        if (result.products?.length) {
-          for (const p of result.products) {
-            if (p.imageUrl) {
-              await this.baileys.sendImage(tenantId, from, p.imageUrl, `${p.name}\nالسعر: ${p.price} جنيه`);
-              await new Promise((r) => setTimeout(r, 1000));
-            }
-          }
-        }
-        // ابعت الرد النصي
-        await this.baileys.sendText(tenantId, from, result.reply);
+      if (!result.success) return;
 
-        // ابعت لينك المتجر عند نية الشراء/الأوردر أو عند عرض منتجات (مرة واحدة لكل محادثة)
-        if (
-          tenant.slug &&
-          (result.branch === 'order' || Boolean(result.products?.length))
-        ) {
-          const row = await this.prisma.conversation.findUnique({
-            where: { id: conversation.id },
-            select: { tempData: true },
-          });
-          const current = (row?.tempData ?? {}) as any;
-          const alreadySent = Boolean(current?.shopLinkSent);
-          if (!alreadySent) {
-            const shopUrl = `https://messaging-automation-platform.vercel.app/shop.html?slug=${tenant.slug}`;
-            const shopText = `🛒 تقدر تكمل الطلب من هنا:\n${shopUrl}`;
-            await this.baileys.sendText(tenantId, from, shopText);
-            await this.prisma.$transaction(async (tx) => {
-              await this.chatService.saveOutgoingMessage(tx, conversation.id, shopText);
-              await tx.conversation.update({
-                where: { id: conversation.id },
-                data: {
-                  lastMessageAt: new Date(),
-                  tempData: { ...(typeof current === 'object' && current ? current : {}), shopLinkSent: true },
-                },
-              });
-            });
+      // ابعت صور المنتجات لو في products
+      if (result.products?.length) {
+        for (const p of result.products) {
+          if (p.imageUrl) {
+            try {
+              await this.baileys.sendImage(
+                tenantId,
+                from,
+                p.imageUrl,
+                `${p.name}\nالسعر: ${p.price} جنيه`,
+              );
+            } catch {
+              await this.baileys.sendText(
+                tenantId,
+                from,
+                `${p.name} - السعر: ${p.price} جنيه`,
+              );
+            }
+            await new Promise((r) => setTimeout(r, 1000));
           }
         }
       }
+
+      // ابعت الرد
+      if (result.reply?.trim()) {
+        await this.baileys.sendText(tenantId, from, result.reply.trim());
+      }
+
+      // ابعت لينك الشراء لو order أو product branch
+      if (
+        tenant.slug &&
+        (result.branch === 'order' || result.branch === 'product')
+      ) {
+        const shopUrl = `https://messaging-automation-platform.vercel.app/shop.html?slug=${tenant.slug}`;
+        await new Promise((r) => setTimeout(r, 500));
+        await this.baileys.sendText(
+          tenantId,
+          from,
+          `🛒 اطلب من هنا:\n${shopUrl}`,
+        );
+      }
     } catch (e) {
-      this.logger.error(
-        `Message handling failed tenantId=${tenantId} from=${from}`,
-        e instanceof Error ? e.stack : e,
-      );
+      this.logger.error('Message handling failed', e);
     }
   }
 }

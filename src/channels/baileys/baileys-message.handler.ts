@@ -28,9 +28,14 @@ export class BaileysMessageHandler {
     if (!tenant || !tenant.isActive) return;
 
     const waAccount = await this.prisma.whatsappAccount.findFirst({
-      where: { tenantId: tenant.id, status: 'active' },
+      where: { tenantId: tenant.id },
       select: { id: true },
     });
+
+    const appUrl = (process.env.APP_URL ?? '').replace(/\/+$/, '');
+    const shopUrl = tenant.slug
+      ? `${appUrl}/shop.html?slug=${tenant.slug}`
+      : '';
 
     // ─── Welcome (أول رسالة فقط) ───
     const existingConv = await this.prisma.conversation.findFirst({
@@ -58,8 +63,7 @@ export class BaileysMessageHandler {
         }
       }
 
-      if (tenant.slug) {
-        const shopUrl = `https://messaging-automation-platform.vercel.app/shop.html?slug=${tenant.slug}`;
+      if (shopUrl) {
         await this.baileys.sendText(
           tenantId,
           from,
@@ -112,10 +116,9 @@ export class BaileysMessageHandler {
 
       // ابعت لينك الشراء لو order أو product branch
       if (
-        tenant.slug &&
+        shopUrl &&
         (result.branch === 'order' || result.branch === 'product')
       ) {
-        const shopUrl = `https://messaging-automation-platform.vercel.app/shop.html?slug=${tenant.slug}`;
         await new Promise((r) => setTimeout(r, 500));
         await this.baileys.sendText(
           tenantId,

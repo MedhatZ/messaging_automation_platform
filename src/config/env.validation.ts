@@ -108,6 +108,23 @@ class EnvironmentVariables {
   @IsOptional()
   @IsUUID()
   BAILEYS_TENANT_ID?: string;
+
+  /**
+   * Filesystem directory for Baileys multi-file auth state.
+   * On platforms with ephemeral disk (e.g. Render), point this at a writable
+   * persistent path such as `/tmp/baileys_auth`.
+   */
+  @IsOptional()
+  @IsString()
+  BAILEYS_AUTH_DIR?: string;
+
+  /**
+   * Public URL of the dashboard where the shop page is hosted.
+   * Used by Baileys to send the shop link to customers.
+   */
+  @IsOptional()
+  @IsString()
+  APP_URL?: string;
 }
 
 export function validateEnv(config: Record<string, unknown>) {

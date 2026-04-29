@@ -88,7 +88,10 @@ export class BaileysService implements OnModuleInit {
   }
 
   private async connect(tenantId: string) {
-    const authFolder = path.join(process.cwd(), 'baileys_auth', tenantId);
+    const authFolder = path.join(
+      process.env.BAILEYS_AUTH_DIR ?? path.join(process.cwd(), 'baileys_auth'),
+      tenantId,
+    );
     const { state, saveCreds } = await useMultiFileAuthState(authFolder);
     const { version } = await fetchLatestBaileysVersion();
 

@@ -502,9 +502,18 @@ export class ChatService {
       if (!products || products.length === 0) {
         return { branch: 'product', reply: 'حاليًا مفيش منتجات متاحة' };
       }
+      // خلي الـ AI يرد بشكل طبيعي مع المنتجات في السياق
+      const aiReply = await this.aiDecision.ask(normalized, {
+        tenantId: context.tenantId,
+        lang: context.lang,
+        products,
+        faqs: await this.fetchFaqContext(context.tenantId, context.lang),
+        history: await this.fetchConversationHistory(context.conversationId),
+        memory: context.semanticContext,
+      });
       return {
         branch: 'product',
-        reply: 'بالتأكيد! دي أحسن منتجاتنا ليك 👇 😊',
+        reply: aiReply,
         products,
       };
     }

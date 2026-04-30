@@ -68,6 +68,15 @@ export class BaileysMessageHandler {
           }
         }
       }
+
+      if (shopUrl) {
+        await new Promise((r) => setTimeout(r, 500));
+        await this.baileys.sendText(
+          tenantId,
+          from,
+          `🛒 شوف منتجاتنا واطلب من هنا:\n${shopUrl}`,
+        );
+      }
     }
 
     // ─── Chat Engine ───
@@ -109,29 +118,6 @@ export class BaileysMessageHandler {
       // ابعت الرد
       if (result.reply?.trim()) {
         await this.baileys.sendText(tenantId, from, result.reply.trim());
-      }
-
-      // ابعت لينك الشراء بس لو product أو order وبس أول مرة
-      if (shopUrl && (result.branch === 'order' || result.branch === 'product')) {
-        const conv = await this.prisma.conversation.findFirst({
-          where: { tenantId: tenant.id, externalUserId: phone },
-          select: { id: true },
-        });
-
-        if (conv) {
-          const msgCount = await this.prisma.message.count({
-            where: { conversationId: conv.id },
-          });
-
-          if (msgCount <= 6) {
-            await new Promise((r) => setTimeout(r, 500));
-            await this.baileys.sendText(
-              tenantId,
-              from,
-              `🛒 اطلب من هنا:\n${shopUrl}`,
-            );
-          }
-        }
       }
     } catch (e) {
       this.logger.error('Message handling failed', e);

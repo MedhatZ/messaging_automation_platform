@@ -38,12 +38,18 @@ export class BaileysMessageHandler {
       : '';
 
     // ─── Welcome (أول رسالة فقط) ───
-    const existingConv = await this.prisma.conversation.findFirst({
-      where: { tenantId: tenant.id, externalUserId: phone },
-      select: { id: true },
+    // بدل existingConv check
+    const msgCount = await this.prisma.message.count({
+      where: {
+        conversation: {
+          tenantId: tenant.id,
+          externalUserId: phone,
+        },
+      },
     });
+    const isFirstMessage = msgCount === 0;
 
-    if (!existingConv) {
+    if (isFirstMessage) {
       const settings = await this.prisma.botSettings.findUnique({
         where: { tenantId: tenant.id },
         select: { welcomeMessage: true, welcomeImages: true },
@@ -105,19 +111,19 @@ export class BaileysMessageHandler {
         await this.baileys.sendText(tenantId, from, result.reply.trim());
       }
 
-      // ابعت لينك الشراء بس في أول 3 رسائل
+      // ابعت لينك الشراء بس لو product أو order وبس أول مرة
       if (shopUrl && (result.branch === 'order' || result.branch === 'product')) {
-        const conversation = await this.prisma.conversation.findFirst({
+        const conv = await this.prisma.conversation.findFirst({
           where: { tenantId: tenant.id, externalUserId: phone },
           select: { id: true },
         });
 
-        if (conversation?.id) {
+        if (conv) {
           const msgCount = await this.prisma.message.count({
-            where: { conversationId: conversation.id },
+            where: { conversationId: conv.id },
           });
 
-          if (msgCount <= 3) {
+          if (msgCount <= 6) {
             await new Promise((r) => setTimeout(r, 500));
             await this.baileys.sendText(
               tenantId,

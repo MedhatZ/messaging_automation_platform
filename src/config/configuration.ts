@@ -48,12 +48,12 @@ export default () => ({
     apiKey: (process.env.ANTHROPIC_API_KEY ?? '').trim(),
     // Can be a single model or a comma-separated list to allow fallback.
     model: (process.env.ANTHROPIC_MODEL ?? '').trim(),
-    timeoutMs: parseInt(process.env.ANTHROPIC_TIMEOUT_MS ?? '15000', 10),
+    timeoutMs: parseInt(process.env.ANTHROPIC_TIMEOUT_MS ?? '25000', 10),
   },
   openai: {
     apiKey: (process.env.OPENAI_API_KEY ?? '').trim(),
     model: (process.env.OPENAI_MODEL ?? 'gpt-4o-mini').trim(),
-    timeoutMs: parseInt(process.env.OPENAI_TIMEOUT_MS ?? '15000', 10),
+    timeoutMs: parseInt(process.env.OPENAI_TIMEOUT_MS ?? '25000', 10),
   },
   jwt: {
     secret:

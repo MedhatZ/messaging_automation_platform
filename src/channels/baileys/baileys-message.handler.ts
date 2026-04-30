@@ -62,15 +62,6 @@ export class BaileysMessageHandler {
           }
         }
       }
-
-      if (shopUrl) {
-        await this.baileys.sendText(
-          tenantId,
-          from,
-          `🛒 شوف منتجاتنا واطلب من هنا:\n${shopUrl}`,
-        );
-        await new Promise((r) => setTimeout(r, 500));
-      }
     }
 
     // ─── Chat Engine ───
@@ -114,17 +105,27 @@ export class BaileysMessageHandler {
         await this.baileys.sendText(tenantId, from, result.reply.trim());
       }
 
-      // ابعت لينك الشراء لو order أو product branch
-      if (
-        shopUrl &&
-        (result.branch === 'order' || result.branch === 'product')
-      ) {
-        await new Promise((r) => setTimeout(r, 500));
-        await this.baileys.sendText(
-          tenantId,
-          from,
-          `🛒 اطلب من هنا:\n${shopUrl}`,
-        );
+      // ابعت لينك الشراء بس في أول 3 رسائل
+      if (shopUrl && (result.branch === 'order' || result.branch === 'product')) {
+        const conversation = await this.prisma.conversation.findFirst({
+          where: { tenantId: tenant.id, externalUserId: phone },
+          select: { id: true },
+        });
+
+        if (conversation?.id) {
+          const msgCount = await this.prisma.message.count({
+            where: { conversationId: conversation.id },
+          });
+
+          if (msgCount <= 3) {
+            await new Promise((r) => setTimeout(r, 500));
+            await this.baileys.sendText(
+              tenantId,
+              from,
+              `🛒 اطلب من هنا:\n${shopUrl}`,
+            );
+          }
+        }
       }
     } catch (e) {
       this.logger.error('Message handling failed', e);

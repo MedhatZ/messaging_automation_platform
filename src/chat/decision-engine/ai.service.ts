@@ -123,7 +123,7 @@ ${memoryText}
       Number(
         this.config.get<number>('anthropic.timeoutMs', { infer: true }) ??
           this.config.get<number>('openai.timeoutMs', { infer: true }) ??
-          15000,
+          25000,
       ),
     );
 

@@ -6,17 +6,6 @@ import type { ProductCard } from './chat-decision.types';
 
 const TIMEOUT_FALLBACK_AR = 'هراجعلك التفاصيل وأرد عليك قريبًا';
 
-const SHOP_INTENT_KEYWORDS = [
-  'شراء',
-  'اطلب',
-  'اشتري',
-  'منتج',
-  'سعر',
-  'order',
-  'buy',
-  'shop',
-] as const;
-
 @Injectable()
 export class ChatAiDecisionService {
   private readonly logger = new Logger(ChatAiDecisionService.name);
@@ -174,8 +163,7 @@ ${memoryText}
 
       if (!text) return TIMEOUT_FALLBACK_AR;
 
-      const withShopLink = await this.maybeAppendShopLink(text, context.tenantId);
-      return withShopLink;
+      return text;
     } catch {
       return TIMEOUT_FALLBACK_AR;
     } finally {
@@ -301,42 +289,6 @@ ${memoryText}
       choices?: { message?: { content?: string } }[];
     };
     return String(data?.choices?.[0]?.message?.content ?? '').trim();
-  }
-
-  private async maybeAppendShopLink(
-    reply: string,
-    tenantId: string,
-  ): Promise<string> {
-    const normalized = reply.toLowerCase();
-    const hasShopIntent = SHOP_INTENT_KEYWORDS.some((k) =>
-      normalized.includes(k.toLowerCase()),
-    );
-    if (!hasShopIntent) return reply;
-
-    const appUrlRaw =
-      (process.env.APP_URL ?? '').trim() ||
-      (this.config.get<string>('APP_URL', { infer: true }) ?? '').trim();
-    if (!appUrlRaw) return reply;
-
-    const tenant = await this.prisma.tenant.findUnique({
-      where: { id: tenantId },
-      select: { slug: true },
-    });
-    const slug = String(tenant?.slug ?? '').trim();
-    if (!slug) return reply;
-
-    const base = appUrlRaw.replace(/\/+$/, '');
-    const shopUrl = `${base}/shop.html?slug=${encodeURIComponent(slug)}`;
-
-    if (
-      reply.includes(shopUrl) ||
-      reply.includes(`/shop/${slug}`) ||
-      reply.includes(`shop.html?slug=${slug}`)
-    ) {
-      return reply;
-    }
-
-    return `${reply}\n\n🛒 ${shopUrl}`;
   }
 }
 
